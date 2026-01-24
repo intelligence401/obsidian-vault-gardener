@@ -1,0 +1,9 @@
+{
+  "enableRenamer": true,
+  "enableAliases": true,
+  "enableSanitizer": true,
+  "enableAutoLinker": true,
+  "ignoredWords": "a, the, no, is",
+  "ignoredFolders": "Templates, Archive, bin",
+  "skipConfirmationModal": true
+}

@@ -24,7 +24,6 @@ export class AutoLinker {
         
         for (const key of this.aliasMap.keys()) {
             const tokens = Tokenizer.tokenize(key);
-            
             const firstWord = tokens.find(t => Tokenizer.isWord(t));
             
             if (firstWord) {
@@ -85,12 +84,7 @@ export class AutoLinker {
             if (token.startsWith('___MASK_')) continue;
 
             const match = WindowMatcher.findMatch(
-                tokens, 
-                i, 
-                this.maxWindow, 
-                this.aliasMap, 
-                this.startWords,
-                this.shortFormRegistry
+                tokens, i, this.maxWindow, this.aliasMap, this.startWords, this.shortFormRegistry
             );
 
             if (match.matched) {
@@ -111,15 +105,13 @@ export class AutoLinker {
                         }
 
                         const unmaskedLookAhead = this.masker.unmask(lookAheadStr);
-
                         const targetPattern = `[[${match.target}]]`;
                         if (unmaskedLookAhead.trim().startsWith(targetPattern)) {
                             shouldSkip = true; 
                         } else {
                             link = `${match.linkText} [[${match.target}]]`;
                         }
-                    } 
-                    else {
+                    } else {
                         link = (match.linkText === match.target) 
                             ? `[[${match.target}]]` 
                             : `[[${match.target}|${match.linkText}]]`;
@@ -136,6 +128,22 @@ export class AutoLinker {
             }
         }
 
-        return this.masker.unmask(resultTokens.join(''));
+        const unmaskedText = this.masker.unmask(resultTokens.join(''));
+        
+        return this.escapeLinksInTables(unmaskedText);
+    }
+
+    private escapeLinksInTables(text: string): string {
+        const lines = text.split('\n');
+        const tableLineRegex = /^\s*\|.*\|\s*$/; 
+
+        for (let i = 0; i < lines.length; i++) {
+            if (tableLineRegex.test(lines[i])) {
+                lines[i] = lines[i].replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (match, target, alias) => {
+                    return `[[${target}\\|${alias}]]`;
+                });
+            }
+        }
+        return lines.join('\n');
     }
 }

@@ -14,6 +14,7 @@ export interface VaultGardenerSettings {
     enableAutoLinker: boolean;
     ignoredWords: string;
     ignoredFolders: string;
+    skipConfirmationModal: boolean;
 }
 
 const DEFAULT_SETTINGS: VaultGardenerSettings = {
@@ -22,7 +23,8 @@ const DEFAULT_SETTINGS: VaultGardenerSettings = {
     enableSanitizer: true,
     enableAutoLinker: true,
     ignoredWords: 'the, and, but, for, not, this, that, with, from, into',
-    ignoredFolders: 'Templates, Archive, bin'
+    ignoredFolders: 'Templates, Archive, bin',
+    skipConfirmationModal: false
 }
 
 export default class VaultGardener extends Plugin {
@@ -30,18 +32,18 @@ export default class VaultGardener extends Plugin {
     statusBarItem: HTMLElement;
 
     async onload() {
-        console.log("--- VAULT GARDENER V10.0 (GOLD MASTER) LOADED ---");
+        console.debug("Vault Gardener: Loading plugin...");
         await this.loadSettings();
 
         this.statusBarItem = this.addStatusBarItem();
-        this.statusBarItem.setText("");
+        this.statusBarItem.setText(""); 
 
-        this.addRibbonIcon('sprout', 'Run Vault Gardener', (_evt: MouseEvent) => {
+        this.addRibbonIcon('sprout', 'Run vault gardener', (_evt: MouseEvent) => {
             if (this.settings.skipConfirmationModal) {
-                this.runSequence();
+                void this.runSequence();
             } else {
                 new ConfirmationModal(this.app, this.settings, () => {
-                    this.runSequence();
+                   void this.runSequence();
                 }).open();
             }
         });
@@ -50,13 +52,13 @@ export default class VaultGardener extends Plugin {
         
         this.addCommand({
             id: 'run-gardener', 
-            name: 'Run Vault Gardener',
+            name: 'Run cleanup', 
             callback: () => {
                 if (this.settings.skipConfirmationModal) {
-                    this.runSequence();
+                    void this.runSequence();
                 } else {
                     new ConfirmationModal(this.app, this.settings, () => {
-                        this.runSequence();
+                        void this.runSequence();
                     }).open();
                 }
             }
@@ -72,7 +74,7 @@ export default class VaultGardener extends Plugin {
     }
 
     async runSequence() {
-        new Notice("🌱 Gardening Started...");
+        new Notice("🌱 Gardening started...");
         this.statusBarItem.setText("🌱 Gardening: Preparing...");
         
         const allFiles = this.app.vault.getMarkdownFiles();
@@ -88,7 +90,7 @@ export default class VaultGardener extends Plugin {
             return true;
         });
 
-        console.log(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
+        console.debug(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
 
         const indexer = new AsyncVaultIndex(this.app, this.settings);
         const renamer = new FilenameRenamer(this.app);
@@ -117,7 +119,7 @@ export default class VaultGardener extends Plugin {
                 this.statusBarItem.setText("🌱 Phase 4: Pruning...");
                 await new LinkSanitizer(this.app, indexData).process(files);
                 
-                this.statusBarItem.setText("🌱 Syncing Cache...");
+                this.statusBarItem.setText("🌱 Syncing cache...");
                 await this.sleep(300); 
             }
 
@@ -126,7 +128,7 @@ export default class VaultGardener extends Plugin {
                 await new AutoLinker(this.app, indexData).process(files);
             }
             
-            new Notice("🌱 Gardening Complete!");
+            new Notice("✅ Gardening complete!");
         } catch (e) {
             console.error("Gardener Failed:", e);
             new Notice("❌ Error. Check Console.");

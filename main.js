@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => VaultGardener
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // utils/AsyncVaultIndex.ts
 var import_obsidian = require("obsidian");
@@ -141,7 +141,10 @@ var AsyncVaultIndex = class {
       if (!registry.has(cleanKey)) {
         registry.set(cleanKey, /* @__PURE__ */ new Set());
       }
-      registry.get(cleanKey).add(cleanRaw);
+      const set = registry.get(cleanKey);
+      if (set) {
+        set.add(cleanRaw);
+      }
     }
   }
 };
@@ -193,15 +196,12 @@ var FilenameRenamer = class {
       console.warn(`Renamer: Skipping ${originalName}, target exists.`);
       return null;
     }
-    console.log(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
-    console.log(`[RENAMER] Key generated: "${newPath}"`);
+    console.debug(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
+    console.debug(`[RENAMER] Key generated: "${newPath}"`);
     await this.app.fileManager.renameFile(file, newPath);
     return { newPath, originalName };
   }
 };
-
-// processors/AliasGenerator.ts
-var import_obsidian3 = require("obsidian");
 
 // processors/FrontmatterSafeOps.ts
 var FrontmatterSafeOps = class {
@@ -281,11 +281,12 @@ var AliasGenerator = class {
       });
       if (modified) count++;
     }
-    if (count > 0) new import_obsidian3.Notice(`Alias Generator: Updated ${count} files.`);
+    return count;
   }
   generateFromRoots(roots, filePath) {
     if (this.renameHistory.has(filePath)) {
-      roots.add(this.renameHistory.get(filePath));
+      const historyItem = this.renameHistory.get(filePath);
+      if (historyItem) roots.add(historyItem);
     }
     const finalAliases = /* @__PURE__ */ new Set();
     const generationSeeds = /* @__PURE__ */ new Set();
@@ -332,9 +333,6 @@ var AliasGenerator = class {
   }
 };
 
-// processors/AutoLinker.ts
-var import_obsidian4 = require("obsidian");
-
 // utils/Tokenizer.ts
 var Tokenizer = class {
   static tokenize(text) {
@@ -377,6 +375,7 @@ var WindowMatcher = class {
       const candidateKey = candidateClean.replace(/\s+/g, " ").toLowerCase();
       if (aliasMap.has(candidateKey)) {
         const target = aliasMap.get(candidateKey);
+        if (!target) continue;
         if (candidateClean.length <= 3) {
           const allowedForms = shortFormRegistry.get(candidateKey);
           if (allowedForms && !allowedForms.has(candidateClean)) {
@@ -486,8 +485,8 @@ var AutoLinker = class {
         console.error(`AutoLinker failed: ${file.path}`, e);
       }
     }
-    if (count > 0) new import_obsidian4.Notice(`AutoLinker: Linked ${count} files.`);
-    if (skipped > 0) console.log(`Skipped ${skipped} files due to user activity.`);
+    if (skipped > 0) console.debug(`Skipped ${skipped} files due to user activity.`);
+    return count;
   }
   async linkText(text, file) {
     this.masker = new ContextMasker();
@@ -558,7 +557,6 @@ var AutoLinker = class {
 };
 
 // processors/LinkSanitizer.ts
-var import_obsidian5 = require("obsidian");
 var LinkSanitizer = class {
   constructor(app, indexData) {
     this.app = app;
@@ -581,7 +579,7 @@ var LinkSanitizer = class {
         console.error(`Sanitizer failed: ${file.path}`, e);
       }
     }
-    if (count > 0) new import_obsidian5.Notice(`Sanitizer: Fixed/Pruned ${count} files.`);
+    return count;
   }
   sanitizeContent(text) {
     const masks = [];
@@ -624,8 +622,8 @@ var LinkSanitizer = class {
 };
 
 // settings/GardenerSettingTab.ts
-var import_obsidian6 = require("obsidian");
-var GardenerSettingTab = class extends import_obsidian6.PluginSettingTab {
+var import_obsidian3 = require("obsidian");
+var GardenerSettingTab = class extends import_obsidian3.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -633,34 +631,34 @@ var GardenerSettingTab = class extends import_obsidian6.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Vault Gardener Settings" });
-    containerEl.createEl("h3", { text: "Active Processors" });
-    new import_obsidian6.Setting(containerEl).setName("Enable Filename Renamer").setDesc('Converts "$a$" to "a" in filenames while preserving the alias.').addToggle((toggle) => toggle.setValue(this.plugin.settings.enableRenamer).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Vault gardener settings").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Active processors").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Enable filename renamer").setDesc('Converts "$a$" to "a" in filenames while preserving the alias.').addToggle((toggle) => toggle.setValue(this.plugin.settings.enableRenamer).onChange(async (value) => {
       this.plugin.settings.enableRenamer = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName("Enable Alias Generator").setDesc("Generates plurals and clean variations for your YAML frontmatter.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAliases).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Enable alias generator").setDesc("Generates plurals and clean variations for your frontmatter.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAliases).onChange(async (value) => {
       this.plugin.settings.enableAliases = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName("Enable Link Sanitizer").setDesc("Fixes malformed links and applies styles.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableSanitizer).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Enable link sanitizer").setDesc("Fixes malformed links and applies scientific citation styles.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableSanitizer).onChange(async (value) => {
       this.plugin.settings.enableSanitizer = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName("Enable Auto-Linker").setDesc("Scans text and creates new links based on your vault index.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAutoLinker).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Enable auto-linker").setDesc("Scans text and creates new links based on your vault index.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAutoLinker).onChange(async (value) => {
       this.plugin.settings.enableAutoLinker = value;
       await this.plugin.saveSettings();
     }));
-    containerEl.createEl("h3", { text: "Safety & Exclusions" });
-    new import_obsidian6.Setting(containerEl).setName("Skip Confirmation Modal").setDesc('If enabled, the "Run Gardener" command will execute immediately without asking for confirmation. Use with caution!').addToggle((toggle) => toggle.setValue(this.plugin.settings.skipConfirmationModal).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Safety & exclusions").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Skip confirmation modal").setDesc("If enabled, the cleanup command will execute immediately without asking for confirmation. Use with caution!").addToggle((toggle) => toggle.setValue(this.plugin.settings.skipConfirmationModal).onChange(async (value) => {
       this.plugin.settings.skipConfirmationModal = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName("Ignored Folders").setDesc('Comma-separated list of folder paths to skip (e.g. "Templates, Archive/Old").').addTextArea((text) => text.setPlaceholder("Templates, Archive").setValue(this.plugin.settings.ignoredFolders).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Ignored folders").setDesc('Comma-separated list of folder paths to skip (e.g. "Templates, Archive/Old").').addTextArea((text) => text.setPlaceholder("Templates, Archive").setValue(this.plugin.settings.ignoredFolders).onChange(async (value) => {
       this.plugin.settings.ignoredFolders = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian6.Setting(containerEl).setName("Ignored Stopwords").setDesc("Comma-separated list of words to NEVER link.").addTextArea((text) => text.setPlaceholder("the, and, or").setValue(this.plugin.settings.ignoredWords).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Ignored stopwords").setDesc("Comma-separated list of words to never link.").addTextArea((text) => text.setPlaceholder("the, and, or").setValue(this.plugin.settings.ignoredWords).onChange(async (value) => {
       this.plugin.settings.ignoredWords = value;
       await this.plugin.saveSettings();
     }));
@@ -668,8 +666,8 @@ var GardenerSettingTab = class extends import_obsidian6.PluginSettingTab {
 };
 
 // modals/ConfirmationModal.ts
-var import_obsidian7 = require("obsidian");
-var ConfirmationModal = class extends import_obsidian7.Modal {
+var import_obsidian4 = require("obsidian");
+var ConfirmationModal = class extends import_obsidian4.Modal {
   constructor(app, settings, onConfirm) {
     super(app);
     this.onConfirm = onConfirm;
@@ -685,12 +683,12 @@ var ConfirmationModal = class extends import_obsidian7.Modal {
     listEl.createEl("li", { text: "TEXT will be CHANGED to ADD/REMOVE LINKS." });
     contentEl.createEl("p", { text: "Running Vault Gardener could lead to unintended changes in your vault." });
     contentEl.createEl("p", { text: "!!!BACKUP YOUR VAULT BEFORE PROCEEDING!!!", cls: "mod-warning" });
-    new import_obsidian7.Setting(contentEl).setName("I understand the risks and do not want to see this warning again.").addToggle((toggle) => toggle.setValue(this.settings.skipConfirmationModal).onChange(async (value) => {
+    new import_obsidian4.Setting(contentEl).setName("I understand the risks and do not want to see this warning again.").addToggle((toggle) => toggle.setValue(this.settings.skipConfirmationModal).onChange(async (value) => {
       var _a;
       this.settings.skipConfirmationModal = value;
       await ((_a = this.app.plugins.getPlugin("vault-gardener")) == null ? void 0 : _a.saveSettings());
     }));
-    new import_obsidian7.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close())).addButton((btn) => btn.setButtonText("Proceed with Caution").setCta().onClick(() => {
+    new import_obsidian4.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close())).addButton((btn) => btn.setButtonText("Proceed with Caution").setCta().onClick(() => {
       this.close();
       this.onConfirm();
     }));
@@ -708,33 +706,34 @@ var DEFAULT_SETTINGS = {
   enableSanitizer: true,
   enableAutoLinker: true,
   ignoredWords: "the, and, but, for, not, this, that, with, from, into",
-  ignoredFolders: "Templates, Archive, bin"
+  ignoredFolders: "Templates, Archive, bin",
+  skipConfirmationModal: false
 };
-var VaultGardener = class extends import_obsidian8.Plugin {
+var VaultGardener = class extends import_obsidian5.Plugin {
   async onload() {
-    console.log("--- VAULT GARDENER V10.0 (GOLD MASTER) LOADED ---");
+    console.debug("Vault Gardener: Loading plugin...");
     await this.loadSettings();
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.setText("");
-    this.addRibbonIcon("sprout", "Run Vault Gardener", (_evt) => {
+    this.addRibbonIcon("sprout", "Run vault gardener", (_evt) => {
       if (this.settings.skipConfirmationModal) {
-        this.runSequence();
+        void this.runSequence();
       } else {
         new ConfirmationModal(this.app, this.settings, () => {
-          this.runSequence();
+          void this.runSequence();
         }).open();
       }
     });
     this.addSettingTab(new GardenerSettingTab(this.app, this));
     this.addCommand({
       id: "run-gardener",
-      name: "Run Vault Gardener",
+      name: "Run cleanup",
       callback: () => {
         if (this.settings.skipConfirmationModal) {
-          this.runSequence();
+          void this.runSequence();
         } else {
           new ConfirmationModal(this.app, this.settings, () => {
-            this.runSequence();
+            void this.runSequence();
           }).open();
         }
       }
@@ -747,7 +746,7 @@ var VaultGardener = class extends import_obsidian8.Plugin {
     await this.saveData(this.settings);
   }
   async runSequence() {
-    new import_obsidian8.Notice("\u{1F331} Gardening Started...");
+    new import_obsidian5.Notice("\u{1F331} Gardening started...");
     this.statusBarItem.setText("\u{1F331} Gardening: Preparing...");
     const allFiles = this.app.vault.getMarkdownFiles();
     const ignoredPaths = this.settings.ignoredFolders.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
@@ -757,7 +756,7 @@ var VaultGardener = class extends import_obsidian8.Plugin {
       }
       return true;
     });
-    console.log(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
+    console.debug(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
     const indexer = new AsyncVaultIndex(this.app, this.settings);
     const renamer = new FilenameRenamer(this.app);
     const generator = new AliasGenerator(this.app);
@@ -779,17 +778,17 @@ var VaultGardener = class extends import_obsidian8.Plugin {
       if (this.settings.enableSanitizer && indexData) {
         this.statusBarItem.setText("\u{1F331} Phase 4: Pruning...");
         await new LinkSanitizer(this.app, indexData).process(files);
-        this.statusBarItem.setText("\u{1F331} Syncing Cache...");
+        this.statusBarItem.setText("\u{1F331} Syncing cache...");
         await this.sleep(300);
       }
       if (this.settings.enableAutoLinker && indexData) {
         this.statusBarItem.setText("\u{1F331} Phase 5: Linking...");
         await new AutoLinker(this.app, indexData).process(files);
       }
-      new import_obsidian8.Notice("\u{1F331} Gardening Complete!");
+      new import_obsidian5.Notice("\u2705 Gardening complete!");
     } catch (e) {
       console.error("Gardener Failed:", e);
-      new import_obsidian8.Notice("\u274C Error. Check Console.");
+      new import_obsidian5.Notice("\u274C Error. Check Console.");
     } finally {
       this.statusBarItem.setText("");
     }

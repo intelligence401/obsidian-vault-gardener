@@ -13,12 +13,16 @@ export class GardenerSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Vault Gardener Settings' });
+        new Setting(containerEl)
+            .setName('Vault gardener settings')
+            .setHeading();
 
-        containerEl.createEl('h3', { text: 'Active Processors' });
+        new Setting(containerEl)
+            .setName('Active processors')
+            .setHeading();
         
         new Setting(containerEl)
-            .setName('Enable Filename Renamer')
+            .setName('Enable filename renamer')
             .setDesc('Converts "$a$" to "a" in filenames while preserving the alias.')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableRenamer)
@@ -28,8 +32,8 @@ export class GardenerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Enable Alias Generator')
-            .setDesc('Generates plurals and clean variations for your YAML frontmatter.')
+            .setName('Enable alias generator')
+            .setDesc('Generates plurals and clean variations for your frontmatter.')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableAliases)
                 .onChange(async (value) => {
@@ -38,8 +42,8 @@ export class GardenerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Enable Link Sanitizer')
-            .setDesc('Fixes malformed links and applies styles.')
+            .setName('Enable link sanitizer')
+            .setDesc('Fixes malformed links and applies scientific citation styles.')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableSanitizer)
                 .onChange(async (value) => {
@@ -48,7 +52,7 @@ export class GardenerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Enable Auto-Linker')
+            .setName('Enable auto-linker')
             .setDesc('Scans text and creates new links based on your vault index.')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableAutoLinker)
@@ -57,11 +61,13 @@ export class GardenerSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        containerEl.createEl('h3', { text: 'Safety & Exclusions' });
+        new Setting(containerEl)
+            .setName('Safety & exclusions')
+            .setHeading();
 
         new Setting(containerEl)
-            .setName('Skip Confirmation Modal')
-            .setDesc('If enabled, the "Run Gardener" command will execute immediately without asking for confirmation. Use with caution!')
+            .setName('Skip confirmation modal')
+            .setDesc('If enabled, the cleanup command will execute immediately without asking for confirmation. Use with caution!')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.skipConfirmationModal)
                 .onChange(async (value) => {
@@ -70,7 +76,7 @@ export class GardenerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Ignored Folders')
+            .setName('Ignored folders')
             .setDesc('Comma-separated list of folder paths to skip (e.g. "Templates, Archive/Old").')
             .addTextArea(text => text
                 .setPlaceholder('Templates, Archive')
@@ -81,8 +87,8 @@ export class GardenerSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
-            .setName('Ignored Stopwords')
-            .setDesc('Comma-separated list of words to NEVER link.')
+            .setName('Ignored stopwords')
+            .setDesc('Comma-separated list of words to never link.')
             .addTextArea(text => text
                 .setPlaceholder('the, and, or')
                 .setValue(this.plugin.settings.ignoredWords)

@@ -1,4 +1,4 @@
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile, } from 'obsidian';
 import { REGEX_PATTERNS } from '../utils/RegexPatterns';
 import { VaultIndexData } from '../utils/AsyncVaultIndex';
 
@@ -13,7 +13,7 @@ export class LinkSanitizer {
         this.shortFormRegistry = indexData.shortFormRegistry;
     }
 
-    async process(files: TFile[]) {
+    async process(files: TFile[]): Promise<number> {
         let count = 0;
         for (const file of files) {
             try {
@@ -29,7 +29,7 @@ export class LinkSanitizer {
                 console.error(`Sanitizer failed: ${file.path}`, e);
             }
         }
-        if (count > 0) new Notice(`Sanitizer: Fixed/Pruned ${count} files.`);
+        return count;
     }
 
     sanitizeContent(text: string): string {

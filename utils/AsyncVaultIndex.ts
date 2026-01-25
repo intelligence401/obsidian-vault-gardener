@@ -36,9 +36,7 @@ export class AsyncVaultIndex {
 
         for (const file of files) {
             const cache = await this.waitForCache(file);
-            
             this.addTerm(index, shortFormRegistry, file.basename, file.basename);
-
             if (cache?.frontmatter) {
                 const aliases = parseFrontMatterAliases(cache.frontmatter);
                 if (aliases) {
@@ -57,7 +55,7 @@ export class AsyncVaultIndex {
         if (current) return current;
 
         return new Promise((resolve) => {
-            // eslint-disable-next-line prefer-const
+            // eslint-disable-next-line prefer-const -- Needed for circular dependency
             let ref: EventRef; 
             const timeout = setTimeout(() => {
                 this.app.metadataCache.offref(ref);
@@ -100,7 +98,10 @@ export class AsyncVaultIndex {
             if (!registry.has(cleanKey)) {
                 registry.set(cleanKey, new Set());
             }
-            registry.get(cleanKey)!.add(cleanRaw);
+            const set = registry.get(cleanKey);
+            if (set) {
+                set.add(cleanRaw);
+            }
         }
     }
 }

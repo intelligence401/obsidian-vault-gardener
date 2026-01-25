@@ -53,11 +53,12 @@ export class WindowMatcher {
 
             const candidateRaw = phraseTokens.join('');
             const candidateClean = candidateRaw.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
-            
             const candidateKey = candidateClean.replace(/\s+/g, ' ').toLowerCase();
 
             if (aliasMap.has(candidateKey)) {
-                const target = aliasMap.get(candidateKey)!;
+                // Fix: Safe access
+                const target = aliasMap.get(candidateKey);
+                if (!target) continue;
 
                 if (candidateClean.length <= 3) {
                     const allowedForms = shortFormRegistry.get(candidateKey);

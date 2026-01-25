@@ -52,8 +52,8 @@ export class FilenameRenamer {
             return null;
         }
 
-        console.log(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
-        console.log(`[RENAMER] Key generated: "${newPath}"`);
+        console.debug(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
+        console.debug(`[RENAMER] Key generated: "${newPath}"`);
         
         await this.app.fileManager.renameFile(file, newPath);
         

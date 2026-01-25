@@ -1,4 +1,4 @@
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile, } from 'obsidian';
 import { Tokenizer } from '../utils/Tokenizer';
 import { WindowMatcher } from './WindowMatcher';
 import { ContextMasker } from './ContextMasker';
@@ -40,7 +40,7 @@ export class AutoLinker {
         return new Promise(resolve => setTimeout(resolve, 0));
     }
 
-    async process(files: TFile[]) {
+    async process(files: TFile[]): Promise<number> {
         let count = 0;
         let skipped = 0;
 
@@ -64,8 +64,8 @@ export class AutoLinker {
             }
         }
 
-        if (count > 0) new Notice(`AutoLinker: Linked ${count} files.`);
-        if (skipped > 0) console.log(`Skipped ${skipped} files due to user activity.`);
+        if (skipped > 0) console.debug(`Skipped ${skipped} files due to user activity.`);
+        return count;
     }
 
     async linkText(text: string, file: TFile): Promise<string> {

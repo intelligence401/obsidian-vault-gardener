@@ -1,4 +1,4 @@
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile, } from 'obsidian';
 import { FrontmatterSafeOps } from './FrontmatterSafeOps';
 
 export class AliasGenerator {
@@ -17,7 +17,7 @@ export class AliasGenerator {
         this.fmOps = new FrontmatterSafeOps(app);
     }
 
-    async process(files: TFile[], history?: Map<string, string>) {
+    async process(files: TFile[], history?: Map<string, string>): Promise<number> {
         if (history) this.renameHistory = history;
 
         let count = 0;
@@ -27,12 +27,13 @@ export class AliasGenerator {
             });
             if (modified) count++;
         }
-        if (count > 0) new Notice(`Alias Generator: Updated ${count} files.`);
+        return count;
     }
 
     private generateFromRoots(roots: Set<string>, filePath: string): Set<string> {
         if (this.renameHistory.has(filePath)) {
-            roots.add(this.renameHistory.get(filePath)!);
+            const historyItem = this.renameHistory.get(filePath);
+            if (historyItem) roots.add(historyItem);
         }
 
         const finalAliases = new Set<string>();
@@ -40,7 +41,7 @@ export class AliasGenerator {
 
         for (const root of roots) {
             if (root.includes('$')) {
-                finalAliases.add(root);
+                finalAliases.add(root); 
 
                 let plain = root.replace(/\$/g, '');
                 

@@ -40,7 +40,7 @@ var REGEX_PATTERNS = {
   get MASK_AREAS() {
     return /(`{3}[\s\S]*?`{3}|`[^`\n]{1,1000}`|\$\$[\s\S]*?\$\$|\$(?=[^$\n]*[{}^_[\]|])[^$\n]+\$|\[\[[^\]]{1,500}\]\]|\[[^\]]{1,500}\]\([^)]{1,500}\))/g;
   },
-  TOKENIZER_SPLIT: /([^a-zA-Z0-9$_\\\-\u2018\u2019'{}]+)/,
+  TOKENIZER_SPLIT: /([^a-zA-Z0-9$_\-\u2018\u2019'{}]+)/,
   LINK_WITH_UNDERSCORE_ALIAS: /\[\[([^\]]{1,500})\|(_[^\]]{1,500})\]\]/g,
   UNDERSCORES_WRAPPER: /^[_$]+|[_$]+$/g,
   LINK_WITH_UNDERSCORE_TARGET: /\[\[(_[^\]|]{1,500}_)\]\]/g
@@ -547,8 +547,10 @@ var AutoLinker = class {
     const tableLineRegex = /^\s*\|.*\|\s*$/;
     for (let i = 0; i < lines.length; i++) {
       if (tableLineRegex.test(lines[i])) {
-        lines[i] = lines[i].replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (match, target, alias) => {
-          return `[[${target}\\|${alias}]]`;
+        lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match, content) => {
+          if (!content.includes("|")) return match;
+          const escapedContent = content.replace(/([^\\])\|/g, "$1\\|");
+          return `[[${escapedContent}]]`;
         });
       }
     }
@@ -590,6 +592,7 @@ var LinkSanitizer = class {
     let working = text;
     working = working.replace(REGEX_PATTERNS.MASK_YAML, createMask);
     working = working.replace(REGEX_PATTERNS.MASK_CODE, createMask);
+    working = working.replace(/\[\[(.*?)\\+\|\s*/g, "[[$1\\|");
     working = working.replace(REGEX_PATTERNS.LINK_WITH_UNDERSCORE_ALIAS, (match, target, alias) => {
       const inner = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "");
       if (target.toLowerCase() === inner.toLowerCase()) return `_[[${target}]]_`;
@@ -760,32 +763,47 @@ var VaultGardener = class extends import_obsidian5.Plugin {
     const indexer = new AsyncVaultIndex(this.app, this.settings);
     const renamer = new FilenameRenamer(this.app);
     const generator = new AliasGenerator(this.app);
+    const MAX_LOOPS = 25;
+    let loopCount = 0;
+    let totalChangesInRun = 0;
     try {
-      let renameHistory = /* @__PURE__ */ new Map();
-      if (this.settings.enableRenamer) {
-        this.statusBarItem.setText("\u{1F331} Phase 1: Renaming...");
-        renameHistory = await renamer.process(files);
+      while (loopCount < MAX_LOOPS) {
+        loopCount++;
+        let changesThisLoop = 0;
+        this.statusBarItem.setText(`\u{1F331} Pass ${loopCount}/${MAX_LOOPS}...`);
+        console.debug(`--- Gardening Pass ${loopCount} ---`);
+        let renameHistory = /* @__PURE__ */ new Map();
+        if (this.settings.enableRenamer) {
+          renameHistory = await renamer.process(files);
+          changesThisLoop += renameHistory.size;
+        }
+        if (this.settings.enableAliases) {
+          const aliasCount = await generator.process(files, renameHistory);
+          changesThisLoop += aliasCount;
+        }
+        let indexData = null;
+        if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
+          indexData = await indexer.buildIndex(files);
+        }
+        if (this.settings.enableSanitizer && indexData) {
+          const sanitizedCount = await new LinkSanitizer(this.app, indexData).process(files);
+          changesThisLoop += sanitizedCount;
+          if (sanitizedCount > 0) {
+            await this.sleep(300);
+          }
+        }
+        if (this.settings.enableAutoLinker && indexData) {
+          const linkedCount = await new AutoLinker(this.app, indexData).process(files);
+          changesThisLoop += linkedCount;
+        }
+        totalChangesInRun += changesThisLoop;
+        console.debug(`Pass ${loopCount} complete. Changes: ${changesThisLoop}`);
+        if (changesThisLoop === 0) {
+          console.debug("Vault is stable. Stopping.");
+          break;
+        }
       }
-      if (this.settings.enableAliases) {
-        this.statusBarItem.setText("\u{1F331} Phase 2: Aliases...");
-        await generator.process(files, renameHistory);
-      }
-      let indexData = null;
-      if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
-        this.statusBarItem.setText("\u{1F331} Phase 3: Indexing...");
-        indexData = await indexer.buildIndex(files);
-      }
-      if (this.settings.enableSanitizer && indexData) {
-        this.statusBarItem.setText("\u{1F331} Phase 4: Pruning...");
-        await new LinkSanitizer(this.app, indexData).process(files);
-        this.statusBarItem.setText("\u{1F331} Syncing cache...");
-        await this.sleep(300);
-      }
-      if (this.settings.enableAutoLinker && indexData) {
-        this.statusBarItem.setText("\u{1F331} Phase 5: Linking...");
-        await new AutoLinker(this.app, indexData).process(files);
-      }
-      new import_obsidian5.Notice("\u2705 Gardening complete!");
+      new import_obsidian5.Notice(`\u{1F331} Gardening complete! (changes: ${totalChangesInRun})`);
     } catch (e) {
       console.error("Gardener Failed:", e);
       new import_obsidian5.Notice("\u274C Error. Check Console.");

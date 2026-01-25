@@ -1,4 +1,4 @@
-import { App, TFile, } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { Tokenizer } from '../utils/Tokenizer';
 import { WindowMatcher } from './WindowMatcher';
 import { ContextMasker } from './ContextMasker';
@@ -65,7 +65,7 @@ export class AutoLinker {
         }
 
         if (skipped > 0) console.debug(`Skipped ${skipped} files due to user activity.`);
-        return count;
+        return count; 
     }
 
     async linkText(text: string, file: TFile): Promise<string> {
@@ -139,8 +139,12 @@ export class AutoLinker {
 
         for (let i = 0; i < lines.length; i++) {
             if (tableLineRegex.test(lines[i])) {
-                lines[i] = lines[i].replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, (match, target, alias) => {
-                    return `[[${target}\\|${alias}]]`;
+                lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match, content) => {
+                    
+                    if (!content.includes('|')) return match;
+
+                    const escapedContent = content.replace(/([^\\])\|/g, '$1\\|');
+                    return `[[${escapedContent}]]`;
                 });
             }
         }

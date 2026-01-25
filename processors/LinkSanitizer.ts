@@ -1,4 +1,4 @@
-import { App, TFile, } from 'obsidian';
+import { App, TFile } from 'obsidian';
 import { REGEX_PATTERNS } from '../utils/RegexPatterns';
 import { VaultIndexData } from '../utils/AsyncVaultIndex';
 
@@ -43,6 +43,8 @@ export class LinkSanitizer {
         
         working = working.replace(REGEX_PATTERNS.MASK_YAML, createMask);
         working = working.replace(REGEX_PATTERNS.MASK_CODE, createMask);
+
+        working = working.replace(/\[\[(.*?)\\+\|\s*/g, '[[$1\\|');
 
         working = working.replace(REGEX_PATTERNS.LINK_WITH_UNDERSCORE_ALIAS, (match, target, alias) => {
             const inner = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');

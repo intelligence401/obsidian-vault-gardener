@@ -11,11 +11,21 @@ export default [
   ...tseslint.configs.recommended,
 
   {
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.json",
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
       "@typescript-eslint/ban-ts-comment": "off",
-      "no-unused-vars": "off"
+
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
+
+      "no-console": ["error", { allow: ["warn", "error", "debug", "info"] }],
     },
   },
   

@@ -15,11 +15,15 @@ export class FilenameRenamer {
     async process(files: TFile[]): Promise<Map<string, string>> {
         const history = new Map<string, string>();
         let count = 0;
-        
         const queue = [...files];
 
         for (const file of queue) {
-            if (file.basename.includes('$')) {
+            if (file.basename.startsWith('Untitled')) continue;
+
+            const hasMath = file.basename.includes('$');
+            const hasWrapper = file.basename.startsWith('_') && file.basename.endsWith('_');
+
+            if (hasMath || hasWrapper) {
                 const result = await this.handleRename(file);
                 if (result) {
                     history.set(result.newPath, result.originalName);
@@ -34,11 +38,23 @@ export class FilenameRenamer {
 
     async handleRename(file: TFile): Promise<{newPath: string, originalName: string} | null> {
         const originalName = file.basename;
-        
-        let newName = originalName.replace(/\$([^$]+)\$/g, (match, inner) => {
-            const trimmed = inner.trim();
-            return this.greekMap[trimmed] || trimmed.replace(/\\/g, '');
-        });
+        let newName = originalName;
+
+        if (newName.startsWith('_') && newName.endsWith('_')) {
+            newName = newName.slice(1, -1);
+        }
+
+        if (newName.includes('$')) {
+            newName = newName.replace(/\$([^$]+)\$/g, (match, inner) => {
+                let trimmed = inner.trim();
+                for (const [key, val] of Object.entries(this.greekMap)) {
+                    const regex = new RegExp(key.replace(/\\/g, '\\\\'), 'g');
+                    trimmed = trimmed.replace(regex, val);
+                }
+                trimmed = trimmed.replace(/[_^{}\\]/g, '');
+                return trimmed;
+            });
+        }
         
         newName = newName.replace(/\s+/g, ' ').trim();
         if (newName === originalName) return null;
@@ -53,7 +69,6 @@ export class FilenameRenamer {
         }
 
         console.debug(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
-        console.debug(`[RENAMER] Key generated: "${newPath}"`);
         
         await this.app.fileManager.renameFile(file, newPath);
         

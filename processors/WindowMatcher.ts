@@ -33,16 +33,13 @@ export class WindowMatcher {
 
             for (let k = 0; k < 50; k++) {
                 if (currentIndex + k >= tokens.length) break;
-                
                 const t = tokens[currentIndex + k];
                 
                 if (Tokenizer.isWord(t)) {
                     phraseTokens.push(t);
                     validWordsFound++;
                 } else {
-                    if (validWordsFound < len) {
-                        phraseTokens.push(t);
-                    }
+                    if (validWordsFound < len) phraseTokens.push(t);
                 }
                 
                 offset = k;
@@ -56,7 +53,6 @@ export class WindowMatcher {
             const candidateKey = candidateClean.replace(/\s+/g, ' ').toLowerCase();
 
             if (aliasMap.has(candidateKey)) {
-                // Fix: Safe access
                 const target = aliasMap.get(candidateKey);
                 if (!target) continue;
 

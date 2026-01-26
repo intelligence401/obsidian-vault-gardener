@@ -37,10 +37,11 @@ var REGEX_PATTERNS = {
   MASK_YAML: /^---\n[\s\S]*?\n---/,
   MASK_MATH: /(\$\$[\s\S]*?\$\$|\$(?=[^$\n]*[{}^_[\]|])[^$\n]+\$)/g,
   MASK_CODE: /(`{3}[\s\S]*?`{3}|`[^`\n]{1,1000}`)/g,
+  MASK_TABLE_ROW: /(^|\n)\s*\|.*\|\s*(?=\n|$)/g,
   get MASK_AREAS() {
     return /(`{3}[\s\S]*?`{3}|`[^`\n]{1,1000}`|\$\$[\s\S]*?\$\$|\$(?=[^$\n]*[{}^_[\]|])[^$\n]+\$|\[\[[^\]]{1,500}\]\]|\[[^\]]{1,500}\]\([^)]{1,500}\))/g;
   },
-  TOKENIZER_SPLIT: /([^a-zA-Z0-9$_\-\u2018\u2019'{}]+)/,
+  TOKENIZER_SPLIT: /([^a-zA-Z0-9$_\-\u2018\u2019'{}\u2070-\u209F\x2F]+)/,
   LINK_WITH_UNDERSCORE_ALIAS: /\[\[([^\]]{1,500})\|(_[^\]]{1,500})\]\]/g,
   UNDERSCORES_WRAPPER: /^[_$]+|[_$]+$/g,
   LINK_WITH_UNDERSCORE_TARGET: /\[\[(_[^\]|]{1,500}_)\]\]/g
@@ -91,41 +92,34 @@ var AsyncVaultIndex = class {
     }
   }
   async buildIndex(files) {
-    const index = /* @__PURE__ */ new Map();
+    const candidateMap = /* @__PURE__ */ new Map();
     const shortFormRegistry = /* @__PURE__ */ new Map();
     for (const file of files) {
       const cache = await this.waitForCache(file);
-      this.addTerm(index, shortFormRegistry, file.basename, file.basename);
+      const target = file.basename;
+      this.collectTerm(candidateMap, shortFormRegistry, target, target);
       if (cache == null ? void 0 : cache.frontmatter) {
         const aliases = (0, import_obsidian.parseFrontMatterAliases)(cache.frontmatter);
         if (aliases) {
           aliases.forEach((alias) => {
-            this.addTerm(index, shortFormRegistry, alias, file.basename);
+            this.collectTerm(candidateMap, shortFormRegistry, alias, target);
           });
         }
       }
     }
-    return { map: index, shortFormRegistry };
+    const uniqueMap = /* @__PURE__ */ new Map();
+    const multiMap = /* @__PURE__ */ new Map();
+    for (const [alias, targets] of candidateMap.entries()) {
+      const targetArray = Array.from(targets);
+      if (targetArray.length === 1) {
+        uniqueMap.set(alias, targetArray[0]);
+      } else if (targetArray.length > 1) {
+        multiMap.set(alias, targetArray);
+      }
+    }
+    return { uniqueMap, multiMap, shortFormRegistry };
   }
-  async waitForCache(file) {
-    const current = this.app.metadataCache.getFileCache(file);
-    if (current) return current;
-    return new Promise((resolve) => {
-      let ref;
-      const timeout = setTimeout(() => {
-        this.app.metadataCache.offref(ref);
-        resolve(null);
-      }, 2e3);
-      ref = this.app.metadataCache.on("changed", (changedFile) => {
-        if (changedFile.path === file.path) {
-          clearTimeout(timeout);
-          this.app.metadataCache.offref(ref);
-          resolve(this.app.metadataCache.getFileCache(file));
-        }
-      });
-    });
-  }
-  addTerm(index, registry, rawTerm, target) {
+  collectTerm(map, registry, rawTerm, target) {
     if (!rawTerm) return;
     const term = rawTerm.trim();
     const cleanRaw = term.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "");
@@ -136,16 +130,34 @@ var AsyncVaultIndex = class {
         return;
       }
     }
-    index.set(cleanKey, target);
+    if (!map.has(cleanKey)) {
+      map.set(cleanKey, /* @__PURE__ */ new Set());
+    }
+    map.get(cleanKey).add(target);
     if (cleanRaw.length <= 3) {
       if (!registry.has(cleanKey)) {
         registry.set(cleanKey, /* @__PURE__ */ new Set());
       }
-      const set = registry.get(cleanKey);
-      if (set) {
-        set.add(cleanRaw);
-      }
+      registry.get(cleanKey).add(cleanRaw);
     }
+  }
+  async waitForCache(file) {
+    const current = this.app.metadataCache.getFileCache(file);
+    if (current) return current;
+    return new Promise((resolve) => {
+      const timerControl = { ref: null };
+      const timeout = setTimeout(() => {
+        if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref);
+        resolve(null);
+      }, 2e3);
+      timerControl.ref = this.app.metadataCache.on("changed", (changedFile) => {
+        if (changedFile.path === file.path) {
+          clearTimeout(timeout);
+          if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref);
+          resolve(this.app.metadataCache.getFileCache(file));
+        }
+      });
+    });
   }
 };
 
@@ -170,7 +182,10 @@ var FilenameRenamer = class {
     let count = 0;
     const queue = [...files];
     for (const file of queue) {
-      if (file.basename.includes("$")) {
+      if (file.basename.startsWith("Untitled")) continue;
+      const hasMath = file.basename.includes("$");
+      const hasWrapper = file.basename.startsWith("_") && file.basename.endsWith("_");
+      if (hasMath || hasWrapper) {
         const result = await this.handleRename(file);
         if (result) {
           history.set(result.newPath, result.originalName);
@@ -183,10 +198,21 @@ var FilenameRenamer = class {
   }
   async handleRename(file) {
     const originalName = file.basename;
-    let newName = originalName.replace(/\$([^$]+)\$/g, (match, inner) => {
-      const trimmed = inner.trim();
-      return this.greekMap[trimmed] || trimmed.replace(/\\/g, "");
-    });
+    let newName = originalName;
+    if (newName.startsWith("_") && newName.endsWith("_")) {
+      newName = newName.slice(1, -1);
+    }
+    if (newName.includes("$")) {
+      newName = newName.replace(/\$([^$]+)\$/g, (match, inner) => {
+        let trimmed = inner.trim();
+        for (const [key, val] of Object.entries(this.greekMap)) {
+          const regex = new RegExp(key.replace(/\\/g, "\\\\"), "g");
+          trimmed = trimmed.replace(regex, val);
+        }
+        trimmed = trimmed.replace(/[_^{}\\]/g, "");
+        return trimmed;
+      });
+    }
     newName = newName.replace(/\s+/g, " ").trim();
     if (newName === originalName) return null;
     const parentPath = file.parent ? file.parent.path : "";
@@ -197,7 +223,6 @@ var FilenameRenamer = class {
       return null;
     }
     console.debug(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
-    console.debug(`[RENAMER] Key generated: "${newPath}"`);
     await this.app.fileManager.renameFile(file, newPath);
     return { newPath, originalName };
   }
@@ -257,7 +282,7 @@ var FrontmatterSafeOps = class {
 
 // processors/AliasGenerator.ts
 var AliasGenerator = class {
-  constructor(app) {
+  constructor(app, settings) {
     this.renameHistory = /* @__PURE__ */ new Map();
     this.greekMap = {
       "\\alpha": "alpha",
@@ -269,13 +294,66 @@ var AliasGenerator = class {
       "\\mu": "mu",
       "\\lambda": "lambda"
     };
+    this.subMap = {
+      "\u2080": "0",
+      "\u2081": "1",
+      "\u2082": "2",
+      "\u2083": "3",
+      "\u2084": "4",
+      "\u2085": "5",
+      "\u2086": "6",
+      "\u2087": "7",
+      "\u2088": "8",
+      "\u2089": "9",
+      "\u208A": "+",
+      "\u208B": "-",
+      "\u208C": "=",
+      "\u208D": "(",
+      "\u208E": ")"
+    };
+    this.supMap = {
+      "\u2070": "0",
+      "\xB9": "1",
+      "\xB2": "2",
+      "\xB3": "3",
+      "\u2074": "4",
+      "\u2075": "5",
+      "\u2076": "6",
+      "\u2077": "7",
+      "\u2078": "8",
+      "\u2079": "9",
+      "\u207A": "+",
+      "\u207B": "-",
+      "\u207D": "(",
+      "\u207E": ")"
+    };
+    this.reverseSubMap = {
+      "0": "_0",
+      "1": "_1",
+      "2": "_2",
+      "3": "_3",
+      "4": "_4",
+      "5": "_5",
+      "6": "_6",
+      "7": "_7",
+      "8": "_8",
+      "9": "_9",
+      "+": "_+",
+      "-": "_-"
+    };
+    this.reverseSupMap = {
+      "+": "^+",
+      "-": "^-"
+    };
     this.app = app;
+    this.settings = settings;
     this.fmOps = new FrontmatterSafeOps(app);
   }
   async process(files, history) {
     if (history) this.renameHistory = history;
     let count = 0;
     for (const file of files) {
+      if (file.basename.startsWith("Untitled")) continue;
       const modified = await this.fmOps.updateAliases(file, (roots) => {
         return this.generateFromRoots(roots, file.path);
       });
@@ -291,15 +369,17 @@ var AliasGenerator = class {
     const finalAliases = /* @__PURE__ */ new Set();
     const generationSeeds = /* @__PURE__ */ new Set();
     for (const root of roots) {
-      if (root.includes("$")) {
+      if (root.includes("$") || this.hasSpecialChars(root)) {
         finalAliases.add(root);
-        let plain = root.replace(/\$/g, "");
-        for (const [key, val] of Object.entries(this.greekMap)) {
-          const regex = new RegExp(key.replace(/\\/g, "\\\\"), "g");
-          plain = plain.replace(regex, val);
+        const ascii = this.normalizeScientificText(root);
+        if (ascii !== root && ascii.length >= 2) {
+          finalAliases.add(ascii);
+          generationSeeds.add(ascii);
         }
-        plain = plain.replace(/\\/g, "");
-        if (plain.length >= 2) generationSeeds.add(plain.trim());
+        if (!root.includes("$") && this.hasSpecialChars(root)) {
+          const latex = this.unicodeToLatex(root);
+          if (latex !== root) finalAliases.add(latex);
+        }
         continue;
       }
       let clean = root;
@@ -311,8 +391,27 @@ var AliasGenerator = class {
     }
     for (const seed of generationSeeds) {
       finalAliases.add(seed);
-      if (!seed.endsWith("ss")) finalAliases.add(seed + "s");
-      if (!seed.endsWith("s")) finalAliases.add(seed + "ss");
+      const isChemical = /\d$/.test(seed);
+      if (!isChemical) {
+        if (!seed.endsWith("ss")) finalAliases.add(seed + "s");
+        if (seed.endsWith("s") && !seed.endsWith("ss")) {
+          finalAliases.add(seed.slice(0, -1));
+        }
+      }
+      if (this.settings.generateIons && seed.endsWith("ium")) {
+        if (seed.toLowerCase() !== "bacterium") {
+          finalAliases.add(`${seed} ion`);
+        }
+      }
+      if (this.settings.generateScientificAbbreviations) {
+        if (/^[A-Z][a-z]+\s[a-z]+$/.test(seed)) {
+          const parts = seed.split(" ");
+          if (parts.length === 2) {
+            const abbrev = `${parts[0].charAt(0)}. ${parts[1]}`;
+            finalAliases.add(abbrev);
+          }
+        }
+      }
       if (seed.endsWith("um")) finalAliases.add(seed.slice(0, -2) + "a");
       if (seed.endsWith("us")) finalAliases.add(seed.slice(0, -2) + "i");
       if (seed.endsWith("is")) finalAliases.add(seed.slice(0, -2) + "es");
@@ -331,6 +430,47 @@ var AliasGenerator = class {
     }
     return finalAliases;
   }
+  hasSpecialChars(text) {
+    return /[₀-₉₊₋₌₍₎⁰-⁹⁺⁻⁽⁾]/.test(text);
+  }
+  normalizeScientificText(text) {
+    let clean = text;
+    if (clean.includes("$")) {
+      clean = clean.replace(/\$/g, "");
+      clean = clean.replace(/[_^{}]/g, "");
+      for (const [key, val] of Object.entries(this.greekMap)) {
+        const regex = new RegExp(key.replace(/\\/g, "\\\\"), "g");
+        clean = clean.replace(regex, val);
+      }
+      clean = clean.replace(/\\/g, "");
+    }
+    let ascii = "";
+    for (const char of clean) {
+      if (this.subMap[char]) ascii += this.subMap[char];
+      else if (this.supMap[char]) ascii += this.supMap[char];
+      else ascii += char;
+    }
+    return ascii.trim();
+  }
+  unicodeToLatex(text) {
+    let latex = "";
+    let hasSub = false;
+    for (const char of text) {
+      if (/[₀-₉]/.test(char)) {
+        const num = this.subMap[char];
+        latex += `_${num}`;
+        hasSub = true;
+      } else if (/[⁺⁻]/.test(char)) {
+        const charge = this.supMap[char];
+        latex += `^{${charge}}`;
+        hasSub = true;
+      } else {
+        latex += char;
+      }
+    }
+    if (hasSub) return `$${latex}$`;
+    return text;
+  }
 };
 
 // utils/Tokenizer.ts
@@ -339,7 +479,7 @@ var Tokenizer = class {
     return text.split(REGEX_PATTERNS.TOKENIZER_SPLIT);
   }
   static isWord(token) {
-    return /[a-zA-Z0-9$_\-\u2018\u2019'{} \\]/.test(token);
+    return /[a-zA-Z0-9$_\-\u2018\u2019'{}\u2070-\u209F\x2F\\]/.test(token);
   }
 };
 
@@ -362,9 +502,7 @@ var WindowMatcher = class {
           phraseTokens.push(t);
           validWordsFound++;
         } else {
-          if (validWordsFound < len) {
-            phraseTokens.push(t);
-          }
+          if (validWordsFound < len) phraseTokens.push(t);
         }
         offset = k;
         if (validWordsFound === len) break;
@@ -416,6 +554,7 @@ var ContextMasker = class {
       return `___MASK_${this.masks.length - 1}___`;
     };
     workingText = workingText.replace(REGEX_PATTERNS.MASK_YAML, createMask);
+    workingText = workingText.replace(REGEX_PATTERNS.MASK_CODE, createMask);
     workingText = workingText.replace(REGEX_PATTERNS.MASK_AREAS, createMask);
     return workingText;
   }
@@ -425,9 +564,18 @@ var ContextMasker = class {
       if (index >= 0 && index < this.masks.length) {
         return this.masks[index];
       }
-      console.error(`ContextMasker: Could not restore mask ${index}`);
       return match;
     });
+  }
+  resolveMask(token) {
+    const match = token.match(/___MASK_(\d+)___/);
+    if (match) {
+      const index = parseInt(match[1], 10);
+      if (index >= 0 && index < this.masks.length) {
+        return this.masks[index];
+      }
+    }
+    return null;
   }
 };
 
@@ -443,15 +591,16 @@ var RecursionGuard = class {
 
 // processors/AutoLinker.ts
 var AutoLinker = class {
-  constructor(app, indexData) {
+  constructor(app, uniqueMap, shortFormRegistry, settings) {
     this.maxWindow = 0;
     this.YIELD_THRESHOLD = 1e3;
     this.app = app;
-    this.aliasMap = indexData.map;
-    this.shortFormRegistry = indexData.shortFormRegistry;
+    this.settings = settings;
+    this.uniqueMap = uniqueMap;
+    this.shortFormRegistry = shortFormRegistry;
     this.masker = new ContextMasker();
     this.startWords = /* @__PURE__ */ new Set();
-    for (const key of this.aliasMap.keys()) {
+    for (const key of this.uniqueMap.keys()) {
       const tokens = Tokenizer.tokenize(key);
       const firstWord = tokens.find((t) => Tokenizer.isWord(t));
       if (firstWord) {
@@ -467,15 +616,14 @@ var AutoLinker = class {
   }
   async process(files) {
     let count = 0;
-    let skipped = 0;
     for (const file of files) {
+      if (file.extension !== "md") continue;
       try {
         const originalContent = await this.app.vault.read(file);
         const linkedContent = await this.linkText(originalContent, file);
         if (linkedContent === originalContent) continue;
         await this.app.vault.process(file, (currentOnDisk) => {
           if (currentOnDisk !== originalContent) {
-            skipped++;
             return currentOnDisk;
           }
           count++;
@@ -485,12 +633,36 @@ var AutoLinker = class {
         console.error(`AutoLinker failed: ${file.path}`, e);
       }
     }
-    if (skipped > 0) console.debug(`Skipped ${skipped} files due to user activity.`);
     return count;
   }
   async linkText(text, file) {
+    let textToProcess = text;
+    const tempMasks = [];
+    textToProcess = textToProcess.replace(
+      /(\[\[(?:[^\]|]+)(?:\|[^\]]+)?\]\]\s*)(\([^)]+\))/g,
+      (match, prefix, content) => {
+        if (content.length > 100) return match;
+        if (!content.includes("$")) {
+          return match;
+        }
+        tempMasks.push(content);
+        return `${prefix}___TEMP_DEF_${tempMasks.length - 1}___`;
+      }
+    );
+    if (!this.settings.enableTableLinking) {
+      textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m) => {
+        tempMasks.push(m);
+        return `___TEMP_${tempMasks.length - 1}___`;
+      });
+    }
+    if (!this.settings.linkMathBlocks) {
+      textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m) => {
+        tempMasks.push(m);
+        return `___TEMP_${tempMasks.length - 1}___`;
+      });
+    }
     this.masker = new ContextMasker();
-    const working = this.masker.mask(text, this.aliasMap);
+    const working = this.masker.mask(textToProcess, this.uniqueMap);
     const tokens = Tokenizer.tokenize(working);
     const resultTokens = [...tokens];
     for (let i = 0; i < tokens.length; i++) {
@@ -498,11 +670,12 @@ var AutoLinker = class {
       const token = tokens[i];
       if (!Tokenizer.isWord(token)) continue;
       if (token.startsWith("___MASK_")) continue;
+      if (token.startsWith("___TEMP_")) continue;
       const match = WindowMatcher.findMatch(
         tokens,
         i,
         this.maxWindow,
-        this.aliasMap,
+        this.uniqueMap,
         this.startWords,
         this.shortFormRegistry
       );
@@ -539,18 +712,24 @@ var AutoLinker = class {
         }
       }
     }
-    const unmaskedText = this.masker.unmask(resultTokens.join(""));
-    return this.escapeLinksInTables(unmaskedText);
+    let unmaskedText = this.masker.unmask(resultTokens.join(""));
+    unmaskedText = unmaskedText.replace(/___TEMP_(?:DEF_)?(\d+)___/g, (m, i) => tempMasks[parseInt(i, 10)] || m);
+    if (this.settings.enableTableLinking) {
+      return this.escapeLinksInTables(unmaskedText);
+    } else {
+      return unmaskedText;
+    }
   }
   escapeLinksInTables(text) {
-    const lines = text.split("\n");
+    const lines = text.split(/\r?\n/);
     const tableLineRegex = /^\s*\|.*\|\s*$/;
     for (let i = 0; i < lines.length; i++) {
       if (tableLineRegex.test(lines[i])) {
         lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match, content) => {
           if (!content.includes("|")) return match;
-          const escapedContent = content.replace(/([^\\])\|/g, "$1\\|");
-          return `[[${escapedContent}]]`;
+          const parts = content.split(/\\\|/g);
+          const fixedParts = parts.map((p) => p.replace(/\|/g, "\\|"));
+          return `[[${fixedParts.join("\\|")}]]`;
         });
       }
     }
@@ -558,16 +737,121 @@ var AutoLinker = class {
   }
 };
 
+// processors/MultiAliasLinker.ts
+var MultiAliasLinker = class {
+  constructor(app, multiMap, shortFormRegistry, settings) {
+    this.app = app;
+    this.multiMap = multiMap;
+    this.shortFormRegistry = shortFormRegistry;
+    this.settings = settings;
+    this.masker = new ContextMasker();
+  }
+  async process(files) {
+    let count = 0;
+    for (const file of files) {
+      if (file.extension !== "md") continue;
+      try {
+        const originalContent = await this.app.vault.read(file);
+        let workingContent = this.unlinkUnsupportedAliases(originalContent);
+        workingContent = this.linkAmbiguousTerms(workingContent, file);
+        if (workingContent !== originalContent) {
+          await this.app.vault.process(file, () => workingContent);
+          count++;
+        }
+      } catch (e) {
+        console.error(`MultiAliasLinker failed: ${file.path}`, e);
+      }
+    }
+    return count;
+  }
+  unlinkUnsupportedAliases(text) {
+    return text.replace(
+      /\[\[([^\]|]+)(\|([^\]]+))?\]\]/g,
+      (match, targetRaw, _pipeGroup, aliasRaw) => {
+        const target = targetRaw.trim();
+        const alias = (aliasRaw || target).trim();
+        const cleanAlias = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "").toLowerCase();
+        if (!this.multiMap.has(cleanAlias)) {
+          return match;
+        }
+        const textWithoutLink = text.replace(match, "");
+        const candidates = this.multiMap.get(cleanAlias);
+        const targetInContext = textWithoutLink.toLowerCase().includes(target.toLowerCase());
+        if (!targetInContext) {
+          const otherCandidateSupported = candidates.some(
+            (c) => c !== target && textWithoutLink.toLowerCase().includes(c.toLowerCase())
+          );
+          if (otherCandidateSupported) {
+            return alias;
+          }
+        }
+        return match;
+      }
+    );
+  }
+  linkAmbiguousTerms(text, file) {
+    let textToProcess = text;
+    const tempMasks = [];
+    if (!this.settings.enableTableLinking) {
+      textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m) => {
+        tempMasks.push(m);
+        return `___TEMP_${tempMasks.length - 1}___`;
+      });
+    }
+    if (!this.settings.linkMathBlocks) {
+      textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m) => {
+        tempMasks.push(m);
+        return `___TEMP_${tempMasks.length - 1}___`;
+      });
+    }
+    const working = this.masker.mask(textToProcess, /* @__PURE__ */ new Map());
+    const tokens = Tokenizer.tokenize(working);
+    const resultTokens = [...tokens];
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (!Tokenizer.isWord(token)) continue;
+      if (token.startsWith("___MASK_")) continue;
+      if (token.startsWith("___TEMP_")) continue;
+      const cleanToken = token.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "");
+      const key = cleanToken.toLowerCase();
+      if (this.multiMap.has(key)) {
+        const candidates = this.multiMap.get(key);
+        const candidatesInContext = candidates.filter(
+          (c) => textToProcess.toLowerCase().includes(c.toLowerCase())
+        );
+        if (candidatesInContext.length === 1) {
+          const target = candidatesInContext[0];
+          const prevToken = i > 0 ? tokens[i - 1] : "";
+          if (RecursionGuard.isSafeToLink(target, file, cleanToken, prevToken)) {
+            const link = cleanToken === target ? `[[${target}]]` : `[[${target}|${cleanToken}]]`;
+            resultTokens[i] = link;
+          }
+        }
+      }
+    }
+    let unmaskedText = this.masker.unmask(resultTokens.join(""));
+    unmaskedText = unmaskedText.replace(/___TEMP_(\d+)___/g, (m, i) => tempMasks[parseInt(i, 10)] || m);
+    return unmaskedText;
+  }
+};
+
 // processors/LinkSanitizer.ts
 var LinkSanitizer = class {
   constructor(app, indexData) {
     this.app = app;
-    this.aliasMap = indexData.map;
+    this.combinedMap = /* @__PURE__ */ new Map();
+    for (const [key, val] of indexData.uniqueMap.entries()) {
+      this.combinedMap.set(key, [val]);
+    }
+    for (const [key, vals] of indexData.multiMap.entries()) {
+      this.combinedMap.set(key, vals);
+    }
     this.shortFormRegistry = indexData.shortFormRegistry;
   }
   async process(files) {
     let count = 0;
     for (const file of files) {
+      if (file.extension !== "md") continue;
       try {
         await this.app.vault.process(file, (text) => {
           const clean = this.sanitizeContent(text);
@@ -602,20 +886,14 @@ var LinkSanitizer = class {
     working = working.replace(VALIDATION_REGEX, (match, targetRaw, aliasRaw) => {
       const target = targetRaw.trim();
       const alias = aliasRaw.trim();
-      if (alias.includes("$")) {
-        return alias;
+      if (alias.includes("$")) return alias;
+      if (target.toLowerCase() === alias.toLowerCase()) {
+        return `[[${target}]]`;
       }
       const cleanAlias = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "").toLowerCase();
-      if (!this.aliasMap.has(cleanAlias)) return alias;
-      const exactAlias = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, "");
-      if (exactAlias.length <= 3) {
-        const allowedForms = this.shortFormRegistry.get(cleanAlias);
-        if (allowedForms && !allowedForms.has(exactAlias)) {
-          return alias;
-        }
-      }
-      const registeredTarget = this.aliasMap.get(cleanAlias);
-      if (registeredTarget && registeredTarget.toLowerCase() !== target.toLowerCase()) {
+      if (!this.combinedMap.has(cleanAlias)) return alias;
+      const registeredTargets = this.combinedMap.get(cleanAlias);
+      if (registeredTargets && !registeredTargets.some((t) => t.toLowerCase() === target.toLowerCase())) {
         return match;
       }
       return match;
@@ -634,35 +912,50 @@ var GardenerSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian3.Setting(containerEl).setName("Vault gardener settings").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Active processors").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Enable filename renamer").setDesc('Converts "$a$" to "a" in filenames while preserving the alias.').addToggle((toggle) => toggle.setValue(this.plugin.settings.enableRenamer).onChange(async (value) => {
-      this.plugin.settings.enableRenamer = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Enable alias generator").setDesc("Generates plurals and clean variations for your frontmatter.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAliases).onChange(async (value) => {
-      this.plugin.settings.enableAliases = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Enable link sanitizer").setDesc("Fixes malformed links and applies scientific citation styles.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableSanitizer).onChange(async (value) => {
-      this.plugin.settings.enableSanitizer = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Enable auto-linker").setDesc("Scans text and creates new links based on your vault index.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAutoLinker).onChange(async (value) => {
-      this.plugin.settings.enableAutoLinker = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("Safety & exclusions").setHeading();
-    new import_obsidian3.Setting(containerEl).setName("Skip confirmation modal").setDesc("If enabled, the cleanup command will execute immediately without asking for confirmation. Use with caution!").addToggle((toggle) => toggle.setValue(this.plugin.settings.skipConfirmationModal).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Safety").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Skip confirmation").setDesc("Run immediately without showing the confirmation modal.").addToggle((toggle) => toggle.setValue(this.plugin.settings.skipConfirmationModal).onChange(async (value) => {
       this.plugin.settings.skipConfirmationModal = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Ignored folders").setDesc('Comma-separated list of folder paths to skip (e.g. "Templates, Archive/Old").').addTextArea((text) => text.setPlaceholder("Templates, Archive").setValue(this.plugin.settings.ignoredFolders).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Ignored folders").setDesc("Comma-separated list of folders to ignore.").addText((text) => text.setPlaceholder("E.g. templates, archive, bin").setValue(this.plugin.settings.ignoredFolders).onChange(async (value) => {
       this.plugin.settings.ignoredFolders = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Ignored stopwords").setDesc("Comma-separated list of words to never link.").addTextArea((text) => text.setPlaceholder("the, and, or").setValue(this.plugin.settings.ignoredWords).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Ignored words").setDesc("Comma-separated list of words to never link (e.g. stopwords).").addTextArea((text) => text.setPlaceholder("The, and, or").setValue(this.plugin.settings.ignoredWords).onChange(async (value) => {
       this.plugin.settings.ignoredWords = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Processors").setHeading();
+    new import_obsidian3.Setting(containerEl).setName("Filename renamer").setDesc("Renames files based on rules.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableRenamer).onChange(async (value) => {
+      this.plugin.settings.enableRenamer = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Alias generator").setDesc("Generates frontmatter aliases automatically.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAliases).onChange(async (value) => {
+      this.plugin.settings.enableAliases = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Generate scientific abbreviations").setDesc('E.g. "Escherichia coli" -> "E. coli"').setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateScientificAbbreviations).onChange(async (value) => {
+      this.plugin.settings.generateScientificAbbreviations = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Generate ions").setDesc('E.g. "Magnesium" -> "Mg2+"').setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateIons).onChange(async (value) => {
+      this.plugin.settings.generateIons = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Auto-linker").setDesc("Automatically creates links in text.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableAutoLinker).onChange(async (value) => {
+      this.plugin.settings.enableAutoLinker = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Link math blocks").setDesc("If enabled, text inside $...$ may be linked.").setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.linkMathBlocks).onChange(async (value) => {
+      this.plugin.settings.linkMathBlocks = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Link table rows").setDesc("If enabled, text inside Markdown tables may be linked.").setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableTableLinking).onChange(async (value) => {
+      this.plugin.settings.enableTableLinking = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("Link sanitizer").setDesc("Removes redundant links and cleans formatting.").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableSanitizer).onChange(async (value) => {
+      this.plugin.settings.enableSanitizer = value;
       await this.plugin.saveSettings();
     }));
   }
@@ -678,20 +971,20 @@ var ConfirmationModal = class extends import_obsidian4.Modal {
   }
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "\u{1F6A8} WARNING! \u{1F6A8}" });
-    contentEl.createEl("p", { text: "You are about to run Vault Gardener. This plugin performs SUBSTANTIAL automated modifications:" });
+    contentEl.createEl("h2", { text: "\u{1F6A8} Critical vault operation" });
+    contentEl.createEl("p", { text: "You are about to run vault gardener. This plugin performs substantial automated modifications:" });
     const listEl = contentEl.createEl("ul");
-    listEl.createEl("li", { text: "FILE RENAMING" });
-    listEl.createEl("li", { text: "YAML FRONTMATTER ALIASES will be GENERATED, UPDATED, or DELETED." });
-    listEl.createEl("li", { text: "TEXT will be CHANGED to ADD/REMOVE LINKS." });
-    contentEl.createEl("p", { text: "Running Vault Gardener could lead to unintended changes in your vault." });
-    contentEl.createEl("p", { text: "!!!BACKUP YOUR VAULT BEFORE PROCEEDING!!!", cls: "mod-warning" });
+    listEl.createEl("li", { text: "\u274C File renaming: files matching specific patterns (e.g., scientific LaTeX) will be moved." });
+    listEl.createEl("li", { text: "\u{1F4DD} Metadata modification: frontmatter aliases will be generated, updated, or deleted." });
+    listEl.createEl("li", { text: "\u{1F517} Content alteration: text in your notes will be changed to add or fix links." });
+    contentEl.createEl("p", { text: "Failure to understand the implications could lead to unintended changes in your vault." });
+    contentEl.createEl("p", { text: "\u{1F4A1} It is strongly recommended to back up your vault now.", cls: "mod-warning" });
     new import_obsidian4.Setting(contentEl).setName("I understand the risks and do not want to see this warning again.").addToggle((toggle) => toggle.setValue(this.settings.skipConfirmationModal).onChange(async (value) => {
       var _a;
       this.settings.skipConfirmationModal = value;
       await ((_a = this.app.plugins.getPlugin("vault-gardener")) == null ? void 0 : _a.saveSettings());
     }));
-    new import_obsidian4.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close())).addButton((btn) => btn.setButtonText("Proceed with Caution").setCta().onClick(() => {
+    new import_obsidian4.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close())).addButton((btn) => btn.setButtonText("Proceed with caution").setCta().onClick(() => {
       this.close();
       this.onConfirm();
     }));
@@ -702,15 +995,56 @@ var ConfirmationModal = class extends import_obsidian4.Modal {
   }
 };
 
+// processors/RedundantLinkPatternSanitizer.ts
+var RedundantLinkPatternSanitizer = class {
+  constructor(app) {
+    this.app = app;
+  }
+  async process(files) {
+    let count = 0;
+    for (const file of files) {
+      if (file.extension !== "md") continue;
+      try {
+        const originalContent = await this.app.vault.read(file);
+        const newContent = this.fixRedundantPatterns(originalContent, file.path);
+        if (newContent !== originalContent) {
+          await this.app.vault.process(file, () => newContent);
+          count++;
+        }
+      } catch (e) {
+        console.error(`PatternSanitizer failed: ${file.path}`, e);
+      }
+    }
+    return count;
+  }
+  fixRedundantPatterns(text, filePath) {
+    const pattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\(\s*(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\)/g;
+    return text.replace(pattern, (match, outerFull, outerTarget, mathBlock, innerFull, innerTarget) => {
+      const t1 = outerTarget.trim().toLowerCase();
+      const t2 = innerTarget.trim().toLowerCase();
+      if (t1 !== t2) return match;
+      const fixed = `${outerFull} (${mathBlock})`;
+      console.info(`[PatternSanitizer] Fixed in ${filePath}:`);
+      console.info(`   From: ${match}`);
+      console.info(`   To:   ${fixed}`);
+      return fixed;
+    });
+  }
+};
+
 // main.ts
 var DEFAULT_SETTINGS = {
   enableRenamer: true,
   enableAliases: true,
   enableSanitizer: true,
   enableAutoLinker: true,
+  enableTableLinking: false,
+  generateScientificAbbreviations: true,
+  generateIons: true,
   ignoredWords: "the, and, but, for, not, this, that, with, from, into",
   ignoredFolders: "Templates, Archive, bin",
-  skipConfirmationModal: false
+  skipConfirmationModal: false,
+  linkMathBlocks: false
 };
 var VaultGardener = class extends import_obsidian5.Plugin {
   async onload() {
@@ -754,6 +1088,7 @@ var VaultGardener = class extends import_obsidian5.Plugin {
     const allFiles = this.app.vault.getMarkdownFiles();
     const ignoredPaths = this.settings.ignoredFolders.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
     const files = allFiles.filter((file) => {
+      if (file.extension !== "md") return false;
       for (const ignored of ignoredPaths) {
         if (file.path.startsWith(ignored)) return false;
       }
@@ -762,8 +1097,8 @@ var VaultGardener = class extends import_obsidian5.Plugin {
     console.debug(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
     const indexer = new AsyncVaultIndex(this.app, this.settings);
     const renamer = new FilenameRenamer(this.app);
-    const generator = new AliasGenerator(this.app);
-    const MAX_LOOPS = 25;
+    const generator = new AliasGenerator(this.app, this.settings);
+    const MAX_LOOPS = 5;
     let loopCount = 0;
     let totalChangesInRun = 0;
     try {
@@ -771,7 +1106,6 @@ var VaultGardener = class extends import_obsidian5.Plugin {
         loopCount++;
         let changesThisLoop = 0;
         this.statusBarItem.setText(`\u{1F331} Pass ${loopCount}/${MAX_LOOPS}...`);
-        console.debug(`--- Gardening Pass ${loopCount} ---`);
         let renameHistory = /* @__PURE__ */ new Map();
         if (this.settings.enableRenamer) {
           renameHistory = await renamer.process(files);
@@ -780,6 +1114,12 @@ var VaultGardener = class extends import_obsidian5.Plugin {
         if (this.settings.enableAliases) {
           const aliasCount = await generator.process(files, renameHistory);
           changesThisLoop += aliasCount;
+        }
+        if (loopCount === 1) {
+          console.info("\u{1F50D} Running RedundantLinkPatternSanitizer...");
+          const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
+          const changes = await patternSanitizer.process(files);
+          changesThisLoop += changes;
         }
         let indexData = null;
         if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
@@ -793,7 +1133,24 @@ var VaultGardener = class extends import_obsidian5.Plugin {
           }
         }
         if (this.settings.enableAutoLinker && indexData) {
-          const linkedCount = await new AutoLinker(this.app, indexData).process(files);
+          if (loopCount === 1) {
+            const multiLinker = new MultiAliasLinker(
+              this.app,
+              indexData.multiMap,
+              indexData.shortFormRegistry,
+              this.settings
+            );
+            const multiCount = await multiLinker.process(files);
+            changesThisLoop += multiCount;
+            console.debug(`[Pass 1] MultiAliasLinker changed ${multiCount} links.`);
+          }
+          const autoLinker = new AutoLinker(
+            this.app,
+            indexData.uniqueMap,
+            indexData.shortFormRegistry,
+            this.settings
+          );
+          const linkedCount = await autoLinker.process(files);
           changesThisLoop += linkedCount;
         }
         totalChangesInRun += changesThisLoop;

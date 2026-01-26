@@ -22,24 +22,19 @@ export class FrontmatterSafeOps {
                     }
                 }
 
-                // 1. EXTRACT ROOTS (Raw & Permissive)
                 const roots = new Set<string>();
                 roots.add(file.basename);
                 current.forEach(a => roots.add(a.trim()));
 
-                // 2. GENERATE
                 const newSet = generatorFn(roots);
 
-                // 3. FILTER & VALIDATE
                 const finalAliases: string[] = [];
                 newSet.forEach(alias => {
                     if (alias === file.basename) return;
                     
-                    // RULE 1: MATH IS KING
                     if (alias.includes('$')) {
                         finalAliases.push(alias);
                     }
-                    // RULE 2: STRICT ALPHANUMERIC
                     else if (this.isStrictlyValid(alias)) {
                         finalAliases.push(alias);
                     }

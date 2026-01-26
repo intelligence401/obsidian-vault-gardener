@@ -3,34 +3,40 @@ import { Tokenizer } from '../utils/Tokenizer';
 import { WindowMatcher } from './WindowMatcher';
 import { ContextMasker } from './ContextMasker';
 import { RecursionGuard } from './RecursionGuard';
-import { VaultIndexData } from '../utils/AsyncVaultIndex';
+import { VaultGardenerSettings } from '../main';
+import { REGEX_PATTERNS } from '../utils/RegexPatterns';
 
 export class AutoLinker {
     app: App;
-    aliasMap: Map<string, string>;
+    uniqueMap: Map<string, string>;         
     shortFormRegistry: Map<string, Set<string>>;
     startWords: Set<string>;
     masker: ContextMasker;
     maxWindow: number = 0;
+    settings: VaultGardenerSettings;
 
     private readonly YIELD_THRESHOLD = 1000;
 
-    constructor(app: App, indexData: VaultIndexData) {
+    constructor(
+        app: App, 
+        uniqueMap: Map<string, string>, 
+        shortFormRegistry: Map<string, Set<string>>,
+        settings: VaultGardenerSettings
+    ) {
         this.app = app;
-        this.aliasMap = indexData.map;
-        this.shortFormRegistry = indexData.shortFormRegistry;
+        this.settings = settings;
+        this.uniqueMap = uniqueMap;
+        this.shortFormRegistry = shortFormRegistry;
         this.masker = new ContextMasker();
         this.startWords = new Set();
         
-        for (const key of this.aliasMap.keys()) {
+        for (const key of this.uniqueMap.keys()) {
             const tokens = Tokenizer.tokenize(key);
             const firstWord = tokens.find(t => Tokenizer.isWord(t));
-            
             if (firstWord) {
                 const cleanStart = firstWord.replace(/^[_$]+|[_$]+$/g, '').toLowerCase();
                 this.startWords.add(cleanStart);
             }
-
             const wordCount = tokens.filter(t => Tokenizer.isWord(t)).length;
             this.maxWindow = Math.max(this.maxWindow, wordCount);
         }
@@ -42,9 +48,10 @@ export class AutoLinker {
 
     async process(files: TFile[]): Promise<number> {
         let count = 0;
-        let skipped = 0;
 
         for (const file of files) {
+            if (file.extension !== 'md') continue;
+
             try {
                 const originalContent = await this.app.vault.read(file);
                 const linkedContent = await this.linkText(originalContent, file);
@@ -53,7 +60,6 @@ export class AutoLinker {
 
                 await this.app.vault.process(file, (currentOnDisk) => {
                     if (currentOnDisk !== originalContent) {
-                        skipped++;
                         return currentOnDisk;
                     }
                     count++;
@@ -63,14 +69,41 @@ export class AutoLinker {
                 console.error(`AutoLinker failed: ${file.path}`, e);
             }
         }
-
-        if (skipped > 0) console.debug(`Skipped ${skipped} files due to user activity.`);
         return count; 
     }
 
     async linkText(text: string, file: TFile): Promise<string> {
+        let textToProcess = text;
+        const tempMasks: string[] = [];
+
+        textToProcess = textToProcess.replace(
+            /(\[\[(?:[^\]|]+)(?:\|[^\]]+)?\]\]\s*)(\([^)]+\))/g, 
+            (match, prefix, content) => {
+                if (content.length > 100) return match;
+                
+                if (!content.includes('$')) {
+                    return match; // Leave (PCT) alone!
+                }
+                
+                tempMasks.push(content);
+                return `${prefix}___TEMP_DEF_${tempMasks.length - 1}___`;
+            }
+        );
+
+        if (!this.settings.enableTableLinking) {
+            textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m) => {
+                tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
+            });
+        }
+
+        if (!this.settings.linkMathBlocks) {
+            textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m) => {
+                tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
+            });
+        }
+
         this.masker = new ContextMasker(); 
-        const working = this.masker.mask(text, this.aliasMap);
+        const working = this.masker.mask(textToProcess, this.uniqueMap);
         
         const tokens = Tokenizer.tokenize(working);
         const resultTokens = [...tokens]; 
@@ -82,9 +115,10 @@ export class AutoLinker {
             
             if (!Tokenizer.isWord(token)) continue;
             if (token.startsWith('___MASK_')) continue;
+            if (token.startsWith('___TEMP_')) continue; 
 
             const match = WindowMatcher.findMatch(
-                tokens, i, this.maxWindow, this.aliasMap, this.startWords, this.shortFormRegistry
+                tokens, i, this.maxWindow, this.uniqueMap, this.startWords, this.shortFormRegistry
             );
 
             if (match.matched) {
@@ -103,7 +137,6 @@ export class AutoLinker {
                             if (idx >= tokens.length) break;
                             lookAheadStr += tokens[idx];
                         }
-
                         const unmaskedLookAhead = this.masker.unmask(lookAheadStr);
                         const targetPattern = `[[${match.target}]]`;
                         if (unmaskedLookAhead.trim().startsWith(targetPattern)) {
@@ -128,23 +161,28 @@ export class AutoLinker {
             }
         }
 
-        const unmaskedText = this.masker.unmask(resultTokens.join(''));
+        let unmaskedText = this.masker.unmask(resultTokens.join(''));
         
-        return this.escapeLinksInTables(unmaskedText);
+        unmaskedText = unmaskedText.replace(/___TEMP_(?:DEF_)?(\d+)___/g, (m, i) => tempMasks[parseInt(i, 10)] || m);
+
+        if (this.settings.enableTableLinking) {
+            return this.escapeLinksInTables(unmaskedText);
+        } else {
+            return unmaskedText;
+        }
     }
 
     private escapeLinksInTables(text: string): string {
-        const lines = text.split('\n');
+        const lines = text.split(/\r?\n/);
         const tableLineRegex = /^\s*\|.*\|\s*$/; 
 
         for (let i = 0; i < lines.length; i++) {
             if (tableLineRegex.test(lines[i])) {
                 lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match, content) => {
-                    
                     if (!content.includes('|')) return match;
-
-                    const escapedContent = content.replace(/([^\\])\|/g, '$1\\|');
-                    return `[[${escapedContent}]]`;
+                    const parts = content.split(/\\\|/g);
+                    const fixedParts = parts.map(p => p.replace(/\|/g, '\\|'));
+                    return `[[${fixedParts.join('\\|')}]]`;
                 });
             }
         }

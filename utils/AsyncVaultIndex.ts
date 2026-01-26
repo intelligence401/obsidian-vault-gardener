@@ -3,7 +3,8 @@ import { REGEX_PATTERNS } from './RegexPatterns';
 import { VaultGardenerSettings } from '../main';
 
 export interface VaultIndexData {
-    map: Map<string, string>;
+    uniqueMap: Map<string, string>;
+    multiMap: Map<string, string[]>;
     shortFormRegistry: Map<string, Set<string>>;
 }
 
@@ -31,56 +32,48 @@ export class AsyncVaultIndex {
     }
 
     async buildIndex(files: TFile[]): Promise<VaultIndexData> {
-        const index = new Map<string, string>();
+        const candidateMap = new Map<string, Set<string>>();
         const shortFormRegistry = new Map<string, Set<string>>();
 
         for (const file of files) {
             const cache = await this.waitForCache(file);
-            this.addTerm(index, shortFormRegistry, file.basename, file.basename);
+            const target = file.basename;
+
+            this.collectTerm(candidateMap, shortFormRegistry, target, target);
+            
             if (cache?.frontmatter) {
                 const aliases = parseFrontMatterAliases(cache.frontmatter);
                 if (aliases) {
                     aliases.forEach(alias => {
-                        this.addTerm(index, shortFormRegistry, alias, file.basename);
+                        this.collectTerm(candidateMap, shortFormRegistry, alias, target);
                     });
                 }
             }
         }
 
-        return { map: index, shortFormRegistry };
+        const uniqueMap = new Map<string, string>();
+        const multiMap = new Map<string, string[]>();
+
+        for (const [alias, targets] of candidateMap.entries()) {
+            const targetArray = Array.from(targets);
+            if (targetArray.length === 1) {
+                uniqueMap.set(alias, targetArray[0]);
+            } else if (targetArray.length > 1) {
+                multiMap.set(alias, targetArray);
+            }
+        }
+
+        return { uniqueMap, multiMap, shortFormRegistry };
     }
 
-    private async waitForCache(file: TFile): Promise<CachedMetadata | null> {
-        const current = this.app.metadataCache.getFileCache(file);
-        if (current) return current;
-
-        return new Promise((resolve) => {
-            // eslint-disable-next-line prefer-const -- Needed for circular dependency
-            let ref: EventRef; 
-            const timeout = setTimeout(() => {
-                this.app.metadataCache.offref(ref);
-                resolve(null);
-            }, 2000);
-
-            ref = this.app.metadataCache.on('changed', (changedFile) => {
-                if (changedFile.path === file.path) {
-                    clearTimeout(timeout);
-                    this.app.metadataCache.offref(ref); 
-                    resolve(this.app.metadataCache.getFileCache(file));
-                }
-            });
-        });
-    }
-
-    private addTerm(
-        index: Map<string, string>, 
+    private collectTerm(
+        map: Map<string, Set<string>>, 
         registry: Map<string, Set<string>>, 
         rawTerm: string, 
         target: string
     ) {
         if (!rawTerm) return;
         const term = rawTerm.trim();
-        
         const cleanRaw = term.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
         const cleanKey = cleanRaw.toLowerCase();
 
@@ -92,16 +85,38 @@ export class AsyncVaultIndex {
             }
         }
 
-        index.set(cleanKey, target);
+        if (!map.has(cleanKey)) {
+            map.set(cleanKey, new Set());
+        }
+        map.get(cleanKey)!.add(target);
 
         if (cleanRaw.length <= 3) {
             if (!registry.has(cleanKey)) {
                 registry.set(cleanKey, new Set());
             }
-            const set = registry.get(cleanKey);
-            if (set) {
-                set.add(cleanRaw);
-            }
+            registry.get(cleanKey)!.add(cleanRaw);
         }
+    }
+
+    private async waitForCache(file: TFile): Promise<CachedMetadata | null> {
+        const current = this.app.metadataCache.getFileCache(file);
+        if (current) return current;
+
+        return new Promise((resolve) => {
+            const timerControl = { ref: null as EventRef | null };
+            
+            const timeout = setTimeout(() => {
+                if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref);
+                resolve(null);
+            }, 2000);
+
+            timerControl.ref = this.app.metadataCache.on('changed', (changedFile) => {
+                if (changedFile.path === file.path) {
+                    clearTimeout(timeout);
+                    if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref); 
+                    resolve(this.app.metadataCache.getFileCache(file));
+                }
+            });
+        });
     }
 }

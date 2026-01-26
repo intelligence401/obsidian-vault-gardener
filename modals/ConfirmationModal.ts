@@ -13,16 +13,16 @@ export class ConfirmationModal extends Modal {
 
     onOpen() {
         const { contentEl } = this;
-        contentEl.createEl('h2', { text: '🚨 WARNING! 🚨' });
-        contentEl.createEl('p', { text: 'You are about to run Vault Gardener. This plugin performs SUBSTANTIAL automated modifications:' });
+        contentEl.createEl('h2', { text: '🚨 Critical vault operation' }); 
+        contentEl.createEl('p', { text: 'You are about to run vault gardener. This plugin performs substantial automated modifications:' });
         
         const listEl = contentEl.createEl('ul');
-        listEl.createEl('li', { text: 'FILE RENAMING' });
-        listEl.createEl('li', { text: 'YAML FRONTMATTER ALIASES will be GENERATED, UPDATED, or DELETED.' });
-        listEl.createEl('li', { text: 'TEXT will be CHANGED to ADD/REMOVE LINKS.' });
+        listEl.createEl('li', { text: '❌ File renaming: files matching specific patterns (e.g., scientific LaTeX) will be moved.' });
+        listEl.createEl('li', { text: '📝 Metadata modification: frontmatter aliases will be generated, updated, or deleted.' });
+        listEl.createEl('li', { text: '🔗 Content alteration: text in your notes will be changed to add or fix links.' });
         
-        contentEl.createEl('p', { text: 'Running Vault Gardener could lead to unintended changes in your vault.' });
-        contentEl.createEl('p', { text: '!!!BACKUP YOUR VAULT BEFORE PROCEEDING!!!', cls: 'mod-warning' });
+        contentEl.createEl('p', { text: 'Failure to understand the implications could lead to unintended changes in your vault.' });
+        contentEl.createEl('p', { text: '💡 It is strongly recommended to back up your vault now.', cls: 'mod-warning' });
 
         new Setting(contentEl)
             .setName('I understand the risks and do not want to see this warning again.')
@@ -38,7 +38,7 @@ export class ConfirmationModal extends Modal {
                 .setButtonText('Cancel')
                 .onClick(() => this.close()))
             .addButton(btn => btn
-                .setButtonText('Proceed with Caution')
+                .setButtonText('Proceed with caution')
                 .setCta()
                 .onClick(() => {
                     this.close();

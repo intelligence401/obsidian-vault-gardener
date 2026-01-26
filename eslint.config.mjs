@@ -18,14 +18,25 @@ export default [
       },
     },
     rules: {
+      // --- Typescript Strictness ---
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+      "@typescript-eslint/no-unused-vars": ["error", { 
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }],
       "@typescript-eslint/ban-ts-comment": "off",
-
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/await-thenable": "error",
 
-      "no-console": ["error", { allow: ["warn", "error", "debug", "info"] }],
+      // --- Obsidian Plugin Best Practices ---
+      "no-console": ["error", { allow: ["warn", "error", "info", "debug"] }],
+      "no-debugger": "error",
+      "no-var": "error",
+      "prefer-const": "error",
+      
+      // Prevent usage of process.env (common Obsidian plugin rule)
+      "no-process-env": "error",
     },
   },
   

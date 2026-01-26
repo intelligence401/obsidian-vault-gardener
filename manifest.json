@@ -1,7 +1,7 @@
 {
     "id": "vault-gardener",
     "name": "Vault Gardener",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "minAppVersion": "0.15.0",
     "description": "Automated vault hygiene: Renames files, generates aliases, and fixes links.",
     "author": "intelligence401",

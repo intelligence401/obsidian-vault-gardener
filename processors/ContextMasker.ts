@@ -9,9 +9,7 @@ export class ContextMasker {
 
         const createMask = (match: string) => {
             if (aliasMap && match.startsWith('$')) {
-                
                 const cleanKey = match.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '').toLowerCase();
-                
                 if (aliasMap.has(cleanKey)) {
                     return match;
                 }
@@ -22,7 +20,7 @@ export class ContextMasker {
         };
 
         workingText = workingText.replace(REGEX_PATTERNS.MASK_YAML, createMask);
-        
+        workingText = workingText.replace(REGEX_PATTERNS.MASK_CODE, createMask);
         workingText = workingText.replace(REGEX_PATTERNS.MASK_AREAS, createMask);
 
         return workingText;
@@ -34,8 +32,18 @@ export class ContextMasker {
             if (index >= 0 && index < this.masks.length) {
                 return this.masks[index];
             }
-            console.error(`ContextMasker: Could not restore mask ${index}`);
             return match;
         });
+    }
+
+    resolveMask(token: string): string | null {
+        const match = token.match(/___MASK_(\d+)___/);
+        if (match) {
+            const index = parseInt(match[1], 10);
+            if (index >= 0 && index < this.masks.length) {
+                return this.masks[index];
+            }
+        }
+        return null;
     }
 }

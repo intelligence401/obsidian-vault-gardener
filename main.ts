@@ -3,18 +3,24 @@ import { AsyncVaultIndex } from './utils/AsyncVaultIndex';
 import { FilenameRenamer } from './processors/FilenameRenamer';
 import { AliasGenerator } from './processors/AliasGenerator';
 import { AutoLinker } from './processors/AutoLinker';
+import { MultiAliasLinker } from './processors/MultiAliasLinker';
 import { LinkSanitizer } from './processors/LinkSanitizer';
 import { GardenerSettingTab } from './settings/GardenerSettingTab';
 import { ConfirmationModal } from './modals/ConfirmationModal';
+import { RedundantLinkPatternSanitizer } from './processors/RedundantLinkPatternSanitizer';
 
 export interface VaultGardenerSettings {
     enableRenamer: boolean;
     enableAliases: boolean;
     enableSanitizer: boolean;
     enableAutoLinker: boolean;
+    enableTableLinking: boolean;
+    generateScientificAbbreviations: boolean;
+    generateIons: boolean;
     ignoredWords: string;
     ignoredFolders: string;
     skipConfirmationModal: boolean;
+    linkMathBlocks: boolean;
 }
 
 const DEFAULT_SETTINGS: VaultGardenerSettings = {
@@ -22,9 +28,13 @@ const DEFAULT_SETTINGS: VaultGardenerSettings = {
     enableAliases: true,
     enableSanitizer: true,
     enableAutoLinker: true,
+    enableTableLinking: false,
+    generateScientificAbbreviations: true,
+    generateIons: true,
     ignoredWords: 'the, and, but, for, not, this, that, with, from, into',
     ignoredFolders: 'Templates, Archive, bin',
-    skipConfirmationModal: false
+    skipConfirmationModal: false,
+    linkMathBlocks: false,
 }
 
 export default class VaultGardener extends Plugin {
@@ -78,15 +88,19 @@ export default class VaultGardener extends Plugin {
         this.statusBarItem.setText("🌱 Gardening: Preparing...");
         
         const allFiles = this.app.vault.getMarkdownFiles();
+        
         const ignoredPaths = this.settings.ignoredFolders
             .split(',')
             .map(s => s.trim())
             .filter(s => s.length > 0);
 
         const files = allFiles.filter(file => {
+            if (file.extension !== 'md') return false;
+            
             for (const ignored of ignoredPaths) {
                 if (file.path.startsWith(ignored)) return false;
             }
+
             return true;
         });
 
@@ -94,9 +108,9 @@ export default class VaultGardener extends Plugin {
 
         const indexer = new AsyncVaultIndex(this.app, this.settings);
         const renamer = new FilenameRenamer(this.app);
-        const generator = new AliasGenerator(this.app);
+        const generator = new AliasGenerator(this.app, this.settings);
 
-        const MAX_LOOPS = 25;
+        const MAX_LOOPS = 5;
         let loopCount = 0;
         let totalChangesInRun = 0;
 
@@ -106,8 +120,7 @@ export default class VaultGardener extends Plugin {
                 let changesThisLoop = 0;
                 
                 this.statusBarItem.setText(`🌱 Pass ${loopCount}/${MAX_LOOPS}...`);
-                console.debug(`--- Gardening Pass ${loopCount} ---`);
-
+                
                 let renameHistory = new Map<string, string>();
 
                 if (this.settings.enableRenamer) {
@@ -119,7 +132,14 @@ export default class VaultGardener extends Plugin {
                     const aliasCount = await generator.process(files, renameHistory);
                     changesThisLoop += aliasCount;
                 }
-                
+
+                if (loopCount === 1) {
+                    console.info("🔍 Running RedundantLinkPatternSanitizer...");
+                    const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
+                    const changes = await patternSanitizer.process(files); 
+                    changesThisLoop += changes;
+                }
+
                 let indexData = null;
                 if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
                     indexData = await indexer.buildIndex(files); 
@@ -135,7 +155,25 @@ export default class VaultGardener extends Plugin {
                 }
 
                 if (this.settings.enableAutoLinker && indexData) {
-                    const linkedCount = await new AutoLinker(this.app, indexData).process(files);
+                    if (loopCount === 1) {
+                         const multiLinker = new MultiAliasLinker(
+                             this.app, 
+                             indexData.multiMap, 
+                             indexData.shortFormRegistry, 
+                             this.settings
+                         );
+                         const multiCount = await multiLinker.process(files);
+                         changesThisLoop += multiCount;
+                         console.debug(`[Pass 1] MultiAliasLinker changed ${multiCount} links.`);
+                    }
+
+                    const autoLinker = new AutoLinker(
+                        this.app, 
+                        indexData.uniqueMap,
+                        indexData.shortFormRegistry, 
+                        this.settings
+                    );
+                    const linkedCount = await autoLinker.process(files);
                     changesThisLoop += linkedCount;
                 }
 

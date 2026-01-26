@@ -6,6 +6,6 @@
     "description": "Automated vault hygiene: Renames files, generates aliases, and fixes links.",
     "author": "intelligence401",
     "authorUrl": "https://github.com/intelligence401",
-    "isDesktopOnly": false
+    "isDesktopOnly": false,
     "css": "styles.css" 
 }

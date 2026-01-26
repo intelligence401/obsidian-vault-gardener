@@ -934,11 +934,11 @@ var GardenerSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.plugin.settings.enableAliases = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Generate scientific abbreviations").setDesc('E.g. "Escherichia coli" -> "E. coli"').setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateScientificAbbreviations).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Generate scientific abbreviations").setDesc('E.g. "Escherichia coli" -> "E. coli"').setClass("vault-gardener-setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateScientificAbbreviations).onChange(async (value) => {
       this.plugin.settings.generateScientificAbbreviations = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Generate ions").setDesc('E.g. "Magnesium" -> "Mg2+"').setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateIons).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Generate ions").setDesc('E.g. "Magnesium" -> "Mg2+"').setClass("vault-gardener-setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.generateIons).onChange(async (value) => {
       this.plugin.settings.generateIons = value;
       await this.plugin.saveSettings();
     }));
@@ -950,7 +950,7 @@ var GardenerSettingTab = class extends import_obsidian3.PluginSettingTab {
       this.plugin.settings.linkMathBlocks = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian3.Setting(containerEl).setName("Link table rows").setDesc("If enabled, text inside Markdown tables may be linked.").setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableTableLinking).onChange(async (value) => {
+    new import_obsidian3.Setting(containerEl).setName("Link table rows").setDesc("If enabled, text inside tables may be linked.").setClass("setting-indent").addToggle((toggle) => toggle.setValue(this.plugin.settings.enableTableLinking).onChange(async (value) => {
       this.plugin.settings.enableTableLinking = value;
       await this.plugin.saveSettings();
     }));
@@ -966,25 +966,23 @@ var import_obsidian4 = require("obsidian");
 var ConfirmationModal = class extends import_obsidian4.Modal {
   constructor(app, settings, onConfirm) {
     super(app);
-    this.onConfirm = onConfirm;
     this.settings = settings;
+    this.onConfirm = onConfirm;
   }
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl("h2", { text: "\u{1F6A8} Critical vault operation" });
-    contentEl.createEl("p", { text: "You are about to run vault gardener. This plugin performs substantial automated modifications:" });
-    const listEl = contentEl.createEl("ul");
-    listEl.createEl("li", { text: "\u274C File renaming: files matching specific patterns (e.g., scientific LaTeX) will be moved." });
-    listEl.createEl("li", { text: "\u{1F4DD} Metadata modification: frontmatter aliases will be generated, updated, or deleted." });
-    listEl.createEl("li", { text: "\u{1F517} Content alteration: text in your notes will be changed to add or fix links." });
-    contentEl.createEl("p", { text: "Failure to understand the implications could lead to unintended changes in your vault." });
-    contentEl.createEl("p", { text: "\u{1F4A1} It is strongly recommended to back up your vault now.", cls: "mod-warning" });
-    new import_obsidian4.Setting(contentEl).setName("I understand the risks and do not want to see this warning again.").addToggle((toggle) => toggle.setValue(this.settings.skipConfirmationModal).onChange(async (value) => {
-      var _a;
-      this.settings.skipConfirmationModal = value;
-      await ((_a = this.app.plugins.getPlugin("vault-gardener")) == null ? void 0 : _a.saveSettings());
-    }));
-    new import_obsidian4.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close())).addButton((btn) => btn.setButtonText("Proceed with caution").setCta().onClick(() => {
+    contentEl.empty();
+    contentEl.addClass("vault-gardener-confirmation-modal");
+    contentEl.createEl("h2", { text: "Confirm cleanup" });
+    const list = contentEl.createEl("ul");
+    if (this.settings.enableRenamer) list.createEl("li", { text: "Normalize filenames" });
+    if (this.settings.enableAliases) list.createEl("li", { text: "Generate aliases" });
+    if (this.settings.enableSanitizer) list.createEl("li", { text: "Sanitize links" });
+    if (this.settings.enableAutoLinker) list.createEl("li", { text: "Auto-link content" });
+    contentEl.createEl("p", { text: "This will modify files in your vault. Make sure you have a backup." });
+    new import_obsidian4.Setting(contentEl).addButton((btn) => btn.setButtonText("Cancel").onClick(() => {
+      this.close();
+    })).addButton((btn) => btn.setButtonText("Run cleanup").setCta().onClick(() => {
       this.close();
       this.onConfirm();
     }));
@@ -1006,7 +1004,7 @@ var RedundantLinkPatternSanitizer = class {
       if (file.extension !== "md") continue;
       try {
         const originalContent = await this.app.vault.read(file);
-        const newContent = this.fixRedundantPatterns(originalContent, file.path);
+        const newContent = this.fixRedundantPatterns(originalContent);
         if (newContent !== originalContent) {
           await this.app.vault.process(file, () => newContent);
           count++;
@@ -1017,22 +1015,20 @@ var RedundantLinkPatternSanitizer = class {
     }
     return count;
   }
-  fixRedundantPatterns(text, filePath) {
+  fixRedundantPatterns(text) {
     const pattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\(\s*(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\)/g;
     return text.replace(pattern, (match, outerFull, outerTarget, mathBlock, innerFull, innerTarget) => {
       const t1 = outerTarget.trim().toLowerCase();
       const t2 = innerTarget.trim().toLowerCase();
       if (t1 !== t2) return match;
       const fixed = `${outerFull} (${mathBlock})`;
-      console.info(`[PatternSanitizer] Fixed in ${filePath}:`);
-      console.info(`   From: ${match}`);
-      console.info(`   To:   ${fixed}`);
       return fixed;
     });
   }
 };
 
 // main.ts
+var import_obsidian6 = require("obsidian");
 var DEFAULT_SETTINGS = {
   enableRenamer: true,
   enableAliases: true,
@@ -1041,18 +1037,17 @@ var DEFAULT_SETTINGS = {
   enableTableLinking: false,
   generateScientificAbbreviations: true,
   generateIons: true,
-  ignoredWords: "the, and, but, for, not, this, that, with, from, into",
-  ignoredFolders: "Templates, Archive, bin",
+  ignoredWords: "The, and, but, for, not, this, that, with, from, into",
+  ignoredFolders: "Templates, archive, bin",
   skipConfirmationModal: false,
   linkMathBlocks: false
 };
 var VaultGardener = class extends import_obsidian5.Plugin {
   async onload() {
-    console.debug("Vault Gardener: Loading plugin...");
     await this.loadSettings();
     this.statusBarItem = this.addStatusBarItem();
     this.statusBarItem.setText("");
-    this.addRibbonIcon("sprout", "Run vault gardener", (_evt) => {
+    this.addRibbonIcon("sprout", "Garden", (_evt) => {
       if (this.settings.skipConfirmationModal) {
         void this.runSequence();
       } else {
@@ -1084,9 +1079,9 @@ var VaultGardener = class extends import_obsidian5.Plugin {
   }
   async runSequence() {
     new import_obsidian5.Notice("\u{1F331} Gardening started...");
-    this.statusBarItem.setText("\u{1F331} Gardening: Preparing...");
+    this.statusBarItem.setText("\u{1F331} Gardening: preparing...");
     const allFiles = this.app.vault.getMarkdownFiles();
-    const ignoredPaths = this.settings.ignoredFolders.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+    const ignoredPaths = this.settings.ignoredFolders.split(",").map((s) => (0, import_obsidian6.normalizePath)(s.trim())).filter((s) => s.length > 0);
     const files = allFiles.filter((file) => {
       if (file.extension !== "md") return false;
       for (const ignored of ignoredPaths) {
@@ -1094,7 +1089,7 @@ var VaultGardener = class extends import_obsidian5.Plugin {
       }
       return true;
     });
-    console.debug(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
+    console.debug(`Processing ${files.length} files`);
     const indexer = new AsyncVaultIndex(this.app, this.settings);
     const renamer = new FilenameRenamer(this.app);
     const generator = new AliasGenerator(this.app, this.settings);
@@ -1116,7 +1111,6 @@ var VaultGardener = class extends import_obsidian5.Plugin {
           changesThisLoop += aliasCount;
         }
         if (loopCount === 1) {
-          console.info("\u{1F50D} Running RedundantLinkPatternSanitizer...");
           const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
           const changes = await patternSanitizer.process(files);
           changesThisLoop += changes;
@@ -1162,13 +1156,13 @@ var VaultGardener = class extends import_obsidian5.Plugin {
       }
       new import_obsidian5.Notice(`\u{1F331} Gardening complete! (changes: ${totalChangesInRun})`);
     } catch (e) {
-      console.error("Gardener Failed:", e);
-      new import_obsidian5.Notice("\u274C Error. Check Console.");
+      console.error("Gardener failed:", e);
+      new import_obsidian5.Notice("\u274C Error. Check console.");
     } finally {
       this.statusBarItem.setText("");
     }
   }
   sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 };

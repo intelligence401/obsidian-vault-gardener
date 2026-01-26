@@ -8,6 +8,7 @@ import { LinkSanitizer } from './processors/LinkSanitizer';
 import { GardenerSettingTab } from './settings/GardenerSettingTab';
 import { ConfirmationModal } from './modals/ConfirmationModal';
 import { RedundantLinkPatternSanitizer } from './processors/RedundantLinkPatternSanitizer';
+import { normalizePath } from 'obsidian';
 
 export interface VaultGardenerSettings {
     enableRenamer: boolean;
@@ -31,8 +32,8 @@ const DEFAULT_SETTINGS: VaultGardenerSettings = {
     enableTableLinking: false,
     generateScientificAbbreviations: true,
     generateIons: true,
-    ignoredWords: 'the, and, but, for, not, this, that, with, from, into',
-    ignoredFolders: 'Templates, Archive, bin',
+    ignoredWords: 'The, and, but, for, not, this, that, with, from, into',
+    ignoredFolders: 'Templates, archive, bin',
     skipConfirmationModal: false,
     linkMathBlocks: false,
 }
@@ -42,13 +43,12 @@ export default class VaultGardener extends Plugin {
     statusBarItem: HTMLElement;
 
     async onload() {
-        console.debug("Vault Gardener: Loading plugin...");
         await this.loadSettings();
 
         this.statusBarItem = this.addStatusBarItem();
         this.statusBarItem.setText(""); 
 
-        this.addRibbonIcon('sprout', 'Run vault gardener', (_evt: MouseEvent) => {
+        this.addRibbonIcon('sprout', 'Garden', (_evt: MouseEvent) => {
             if (this.settings.skipConfirmationModal) {
                 void this.runSequence();
             } else {
@@ -85,26 +85,24 @@ export default class VaultGardener extends Plugin {
 
     async runSequence() {
         new Notice("🌱 Gardening started...");
-        this.statusBarItem.setText("🌱 Gardening: Preparing...");
+        this.statusBarItem.setText("🌱 Gardening: preparing...");
         
         const allFiles = this.app.vault.getMarkdownFiles();
         
         const ignoredPaths = this.settings.ignoredFolders
             .split(',')
-            .map(s => s.trim())
+            .map(s => normalizePath(s.trim()))
             .filter(s => s.length > 0);
 
         const files = allFiles.filter(file => {
             if (file.extension !== 'md') return false;
-            
             for (const ignored of ignoredPaths) {
                 if (file.path.startsWith(ignored)) return false;
             }
-
             return true;
         });
 
-        console.debug(`Processing ${files.length} files (Excluded ${allFiles.length - files.length})`);
+        console.debug(`Processing ${files.length} files`);
 
         const indexer = new AsyncVaultIndex(this.app, this.settings);
         const renamer = new FilenameRenamer(this.app);
@@ -134,7 +132,6 @@ export default class VaultGardener extends Plugin {
                 }
 
                 if (loopCount === 1) {
-                    console.info("🔍 Running RedundantLinkPatternSanitizer...");
                     const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
                     const changes = await patternSanitizer.process(files); 
                     changesThisLoop += changes;
@@ -188,14 +185,14 @@ export default class VaultGardener extends Plugin {
             
             new Notice(`🌱 Gardening complete! (changes: ${totalChangesInRun})`);
         } catch (e) {
-            console.error("Gardener Failed:", e);
-            new Notice("❌ Error. Check Console.");
+            console.error("Gardener failed:", e);
+            new Notice("❌ Error. Check console.");
         } finally {
             this.statusBarItem.setText("");
         }
     }
 
     sleep(ms: number) {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise(resolve => window.setTimeout(resolve, ms));
     }
 }

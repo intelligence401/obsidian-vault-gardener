@@ -7,38 +7,34 @@ export class ConfirmationModal extends Modal {
 
     constructor(app: App, settings: VaultGardenerSettings, onConfirm: () => void) {
         super(app);
-        this.onConfirm = onConfirm;
         this.settings = settings;
+        this.onConfirm = onConfirm;
     }
 
     onOpen() {
         const { contentEl } = this;
-        contentEl.createEl('h2', { text: '🚨 Critical vault operation' }); 
-        contentEl.createEl('p', { text: 'You are about to run vault gardener. This plugin performs substantial automated modifications:' });
+        contentEl.empty();
         
-        const listEl = contentEl.createEl('ul');
-        listEl.createEl('li', { text: '❌ File renaming: files matching specific patterns (e.g., scientific LaTeX) will be moved.' });
-        listEl.createEl('li', { text: '📝 Metadata modification: frontmatter aliases will be generated, updated, or deleted.' });
-        listEl.createEl('li', { text: '🔗 Content alteration: text in your notes will be changed to add or fix links.' });
-        
-        contentEl.createEl('p', { text: 'Failure to understand the implications could lead to unintended changes in your vault.' });
-        contentEl.createEl('p', { text: '💡 It is strongly recommended to back up your vault now.', cls: 'mod-warning' });
+        contentEl.addClass('vault-gardener-confirmation-modal');
 
-        new Setting(contentEl)
-            .setName('I understand the risks and do not want to see this warning again.')
-            .addToggle(toggle => toggle
-                .setValue(this.settings.skipConfirmationModal)
-                .onChange(async (value) => {
-                    this.settings.skipConfirmationModal = value;
-                    await this.app.plugins.getPlugin('vault-gardener')?.saveSettings();
-                }));
+        contentEl.createEl('h2', { text: 'Confirm cleanup' });
+
+        const list = contentEl.createEl('ul');
+        if (this.settings.enableRenamer) list.createEl('li', { text: 'Normalize filenames' });
+        if (this.settings.enableAliases) list.createEl('li', { text: 'Generate aliases' });
+        if (this.settings.enableSanitizer) list.createEl('li', { text: 'Sanitize links' });
+        if (this.settings.enableAutoLinker) list.createEl('li', { text: 'Auto-link content' });
+
+        contentEl.createEl('p', { text: 'This will modify files in your vault. Make sure you have a backup.' });
 
         new Setting(contentEl)
             .addButton(btn => btn
                 .setButtonText('Cancel')
-                .onClick(() => this.close()))
+                .onClick(() => {
+                    this.close();
+                }))
             .addButton(btn => btn
-                .setButtonText('Proceed with caution')
+                .setButtonText('Run cleanup')
                 .setCta()
                 .onClick(() => {
                     this.close();

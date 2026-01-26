@@ -76,7 +76,7 @@ export class GardenerSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('Generate scientific abbreviations')
             .setDesc('E.g. "Escherichia coli" -> "E. coli"')
-            .setClass('setting-indent')
+            .setClass('vault-gardener-setting-indent') // <--- NEW CLASS
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateScientificAbbreviations)
                 .onChange(async (value) => {
@@ -87,14 +87,14 @@ export class GardenerSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('Generate ions')
             .setDesc('E.g. "Magnesium" -> "Mg2+"')
-            .setClass('setting-indent')
+            .setClass('vault-gardener-setting-indent') // <--- NEW CLASS
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateIons)
                 .onChange(async (value) => {
                     this.plugin.settings.generateIons = value;
                     await this.plugin.saveSettings();
                 }));
-
+        
         new Setting(containerEl)
             .setName('Auto-linker')
             .setDesc('Automatically creates links in text.')
@@ -118,7 +118,7 @@ export class GardenerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Link table rows')
-            .setDesc('If enabled, text inside Markdown tables may be linked.')
+            .setDesc('If enabled, text inside tables may be linked.')
             .setClass('setting-indent')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableTableLinking)

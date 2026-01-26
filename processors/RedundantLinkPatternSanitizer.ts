@@ -15,7 +15,7 @@ export class RedundantLinkPatternSanitizer {
             
             try {
                 const originalContent = await this.app.vault.read(file);
-                const newContent = this.fixRedundantPatterns(originalContent, file.path);
+                const newContent = this.fixRedundantPatterns(originalContent);
                 
                 if (newContent !== originalContent) {
                     await this.app.vault.process(file, () => newContent);
@@ -29,7 +29,7 @@ export class RedundantLinkPatternSanitizer {
         return count;
     }
 
-    private fixRedundantPatterns(text: string, filePath: string): string {
+    private fixRedundantPatterns(text: string): string {
         const pattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\(\s*(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\)/g;
 
         return text.replace(pattern, (match, outerFull, outerTarget, mathBlock, innerFull, innerTarget) => {
@@ -38,13 +38,9 @@ export class RedundantLinkPatternSanitizer {
             const t2 = innerTarget.trim().toLowerCase();
 
             if (t1 !== t2) return match;
-            
+
             const fixed = `${outerFull} (${mathBlock})`;
             
-            console.info(`[PatternSanitizer] Fixed in ${filePath}:`);
-            console.info(`   From: ${match}`);
-            console.info(`   To:   ${fixed}`);
-
             return fixed;
         });
     }

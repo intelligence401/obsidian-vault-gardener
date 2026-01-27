@@ -1,44 +1,29 @@
-import globals from "globals";
-import pluginJs from "@eslint/js";
-import tseslint from "typescript-eslint";
+// eslint.config.mjs
+import tsparser from "@typescript-eslint/parser";
+import { defineConfig } from "eslint/config";
+import obsidianmd from "eslint-plugin-obsidianmd";
+import globals from "globals"; // standard globals
 
-export default [
-  { files: ["**/*.ts"] },
-  
-  { languageOptions: { globals: { ...globals.browser, ...globals.node } } },
-  
-  pluginJs.configs.recommended,
-  ...tseslint.configs.recommended,
-
+export default defineConfig([
+  ...obsidianmd.configs.recommended,
   {
+    files: ["**/*.ts"],
     languageOptions: {
-      parserOptions: {
-        project: "./tsconfig.json",
-        tsconfigRootDir: import.meta.dirname,
+      parser: tsparser,
+      parserOptions: { project: "./tsconfig.json" },
+      // FIX 1: Add browser and node globals so 'console' and 'window' are defined
+      globals: {
+        ...globals.browser,
+        ...globals.node,
       },
     },
-    rules: {
-      // --- Typescript Strictness ---
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": ["error", { 
-        "argsIgnorePattern": "^_",
-        "varsIgnorePattern": "^_",
-        "caughtErrorsIgnorePattern": "^_"
-      }],
-      "@typescript-eslint/ban-ts-comment": "off",
-      "@typescript-eslint/no-floating-promises": "error",
-      "@typescript-eslint/await-thenable": "error",
 
-      // --- Obsidian Plugin Best Practices ---
-      "no-console": ["error", { allow: ["warn", "error", "info", "debug"] }],
-      "no-debugger": "error",
-      "no-var": "error",
-      "prefer-const": "error",
+    rules: {
+      "obsidianmd/sample-names": "off",
+      "obsidianmd/prefer-file-manager-trash-file": "error",
       
-      // Prevent usage of process.env (common Obsidian plugin rule)
-      "no-process-env": "error",
+      // OPTIONAL: If 'console' still complains after adding globals, you can turn it off:
+      // "no-console": "off",
     },
   },
-  
-  { ignores: ["main.js", "node_modules/", "dist/"] }
-];
+]);

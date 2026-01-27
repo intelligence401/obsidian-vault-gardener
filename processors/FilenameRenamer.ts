@@ -49,7 +49,7 @@ export class FilenameRenamer {
         }
 
         if (newName.includes('$')) {
-            newName = newName.replace(/\$([^$]+)\$/g, (match, inner) => {
+            newName = newName.replace(/\$([^$]+)\$/g, (_match: string, inner: string) => {
                 let trimmed = inner.trim();
                 for (const [key, val] of Object.entries(this.greekMap)) {
                     const regex = new RegExp(key.replace(/\\/g, '\\\\'), 'g');

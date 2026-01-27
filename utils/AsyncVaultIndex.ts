@@ -108,7 +108,7 @@ export class AsyncVaultIndex {
 
         return new Promise((resolve) => {
             const timerControl = { ref: null as EventRef | null };
-            const timeout = window.setTimeout(() => { 
+            const timeout = setTimeout(() => { 
                 if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref);
                 resolve(null);
             }, 2000);

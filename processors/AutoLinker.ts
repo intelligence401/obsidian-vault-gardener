@@ -65,8 +65,8 @@ export class AutoLinker {
                     count++;
                     return linkedContent;
                 });
-            } catch (e) {
-                console.error(`AutoLinker failed: ${file.path}`, e);
+            } catch {
+                // Ignore errors
             }
         }
         return count; 
@@ -78,7 +78,7 @@ export class AutoLinker {
 
         textToProcess = textToProcess.replace(
             /(\[\[(?:[^\]|]+)(?:\|[^\]]+)?\]\]\s*)(\([^)]*?\$[^)]*?\))/g, 
-            (match, prefix, content) => {
+            (match: string, prefix: string, content: string) => {
                 if (!content.includes('$')) return match; 
                 
                 tempMasks.push(content);
@@ -87,13 +87,13 @@ export class AutoLinker {
         );
 
         if (!this.settings.enableTableLinking) {
-            textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m) => {
+            textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m: string) => {
                 tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
             });
         }
 
         if (!this.settings.linkMathBlocks) {
-            textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m) => {
+            textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m: string) => {
                 tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
             });
         }
@@ -159,7 +159,7 @@ export class AutoLinker {
 
         let unmaskedText = this.masker.unmask(resultTokens.join(''));
         
-        unmaskedText = unmaskedText.replace(/___TEMP_(?:DEF_)?(\d+)___/g, (m, i) => tempMasks[parseInt(i, 10)] || m);
+        unmaskedText = unmaskedText.replace(/___TEMP_(?:DEF_)?(\d+)___/g, (m: string, i: string) => tempMasks[parseInt(i, 10)] || m);
 
         if (this.settings.enableTableLinking) {
             return this.escapeLinksInTables(unmaskedText);
@@ -174,10 +174,10 @@ export class AutoLinker {
 
         for (let i = 0; i < lines.length; i++) {
             if (tableLineRegex.test(lines[i])) {
-                lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match, content) => {
+                lines[i] = lines[i].replace(/\[\[(.*?)\]\]/g, (match: string, content: string) => {
                     if (!content.includes('|')) return match;
                     const parts = content.split(/\\\|/g);
-                    const fixedParts = parts.map(p => p.replace(/\|/g, '\\|'));
+                    const fixedParts = parts.map((p: string) => p.replace(/\|/g, '\\|'));
                     return `[[${fixedParts.join('\\|')}]]`;
                 });
             }

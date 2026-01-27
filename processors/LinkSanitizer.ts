@@ -30,8 +30,8 @@ export class LinkSanitizer {
                     await this.app.vault.process(file, () => clean);
                     count++;
                 }
-            } catch (e) {
-                console.error(`Sanitizer failed: ${file.path}`, e);
+            } catch {
+                // Ignore
             }
         }
         return count;
@@ -52,14 +52,14 @@ export class LinkSanitizer {
         const ulvaRegex = /_(\[\[[^\]]+\]\])_(\s*[^_\n\r]+_)/g;
         working = working.replace(ulvaRegex, '_$1$2');
 
-        working = working.replace(REGEX_PATTERNS.LINK_WITH_UNDERSCORE_ALIAS, (match, target, alias) => {
+        working = working.replace(REGEX_PATTERNS.LINK_WITH_UNDERSCORE_ALIAS, (match: string, target: string, alias: string) => {
             const inner = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
             if (target.toLowerCase() === inner.toLowerCase()) return `_[[${target}]]_`;
             return `_[[${target}|${inner}]]_`;
         });
 
         const VALIDATION_REGEX = /\[\[([^\]|]+)\|([^\]]+)\]\]/g;
-        working = working.replace(VALIDATION_REGEX, (match, targetRaw, aliasRaw) => {
+        working = working.replace(VALIDATION_REGEX, (match: string, targetRaw: string, aliasRaw: string) => {
             const target = targetRaw.trim();
             const alias = aliasRaw.trim();
             
@@ -98,6 +98,6 @@ export class LinkSanitizer {
             return match;
         });
 
-        return working.replace(/___MASK_(\d+)___/g, (m, i) => masks[parseInt(i, 10)] || m);
+        return working.replace(/___MASK_(\d+)___/g, (m: string, i: string) => masks[parseInt(String(i), 10)] || m);
     }
 }

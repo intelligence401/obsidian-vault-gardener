@@ -77,7 +77,7 @@ export default class VaultGardener extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as VaultGardenerSettings);
     }
 
     async saveSettings() {
@@ -199,7 +199,7 @@ export default class VaultGardener extends Plugin {
                 }
             }
             
-            new Notice(`Gardening complete! (Changes: ${totalChangesInRun})`);
+            new Notice(`Gardening complete! (changes: ${totalChangesInRun})`);
         } catch (e) {
             console.error("Gardener failed:", e);
             new Notice("Error. Check console.");
@@ -209,6 +209,6 @@ export default class VaultGardener extends Plugin {
     }
 
     sleep(ms: number) {
-        return new Promise(resolve => window.setTimeout(resolve, ms));
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 }

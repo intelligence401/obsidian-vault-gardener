@@ -29,7 +29,6 @@ export class ScientificSuffixManager {
                     if (cleanName !== workingName) {
                         const newPath = normalizePath(file.parent ? `${file.parent.path}/${cleanName}.md` : `${cleanName}.md`);
                         if (!(await this.app.vault.adapter.exists(newPath))) {
-                            GardenerLogger.log('SuffixManager', `Renaming ${workingName} -> ${cleanName}`);
                             await this.app.fileManager.renameFile(file, newPath);
                             workingName = cleanName; 
                             count++;
@@ -48,8 +47,8 @@ export class ScientificSuffixManager {
                 
                 if (modified) count++;
 
-            } catch (e) {
-                console.error(`ScientificSuffixManager failed on ${file.path}`, e);
+            } catch {
+                // Ignore error
             }
         }
         return count;
@@ -88,7 +87,7 @@ export class ScientificSuffixManager {
 
                 const adjacentPattern = /\b([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*)(\s+)([_$])([a-zA-Z][0-9]?)\3/g;
                 
-                working = working.replace(adjacentPattern, (match, head, space, wrapper, char) => {
+                working = working.replace(adjacentPattern, (match: string, head: string, space: string, wrapper: string, char: string) => {
                     let singularHead = head;
                     const isPlural = head.endsWith('s') && !head.endsWith('ss');
                     if (isPlural) {
@@ -120,7 +119,7 @@ export class ScientificSuffixManager {
 
                 const leafPattern = /(^|[\s(])([_$])([a-zA-Z][0-9]?)\2(?=[.,)\s]|$)/g;
                 
-                working = working.replace(leafPattern, (match, prefix, wrapper, char) => {
+                working = working.replace(leafPattern, (match: string, prefix: string, wrapper: string, char: string) => {
                     const leafKey = `${wrapper}${char}${wrapper}`;
                     const trueTarget = this.resolveTarget(leafKey.toLowerCase(), indexData, lowerContent);
 
@@ -134,15 +133,15 @@ export class ScientificSuffixManager {
                     return match;
                 });
 
-                working = working.replace(/___SUFFIXMASK_(\d+)___/g, (m, i) => masks[parseInt(i, 10)] || m);
+                working = working.replace(/___SUFFIXMASK_(\d+)___/g, (m: string, i: string) => masks[parseInt(String(i), 10)] || m);
 
                 if (working !== original) {
                     await this.app.vault.process(file, () => working);
                     count++;
                 }
 
-            } catch (e) {
-                console.error(`SuffixManager Linker failed: ${file.path}`, e);
+            } catch {
+                // Ignore error
             }
         }
         return count;
@@ -150,10 +149,14 @@ export class ScientificSuffixManager {
 
     private resolveTarget(key: string, data: VaultIndexData, fileContent: string): string | null {
         const lowerKey = key.toLowerCase();
-        if (data.uniqueMap.has(lowerKey)) return data.uniqueMap.get(lowerKey)!;
+        
+        const exactMatch = data.uniqueMap.get(lowerKey);
+        if (exactMatch) return exactMatch;
 
         if (data.multiMap.has(lowerKey)) {
-            const candidates = data.multiMap.get(lowerKey)!;
+            const candidates = data.multiMap.get(lowerKey);
+            if (!candidates) return null;
+
             const sorted = [...candidates].sort((a, b) => b.length - a.length);
 
             for (const candidate of sorted) {

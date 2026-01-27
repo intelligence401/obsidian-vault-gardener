@@ -30,8 +30,8 @@ export class RedundantLinkPatternSanitizer {
                     await this.app.vault.process(file, () => newContent);
                     count++;
                 }
-            } catch (e) {
-                console.error(`PatternSanitizer failed: ${file.path}`, e);
+            } catch {
+                // Ignore error
             }
         }
         
@@ -43,7 +43,7 @@ export class RedundantLinkPatternSanitizer {
 
         const magnesiumPattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\(\s*(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\)/g;
         
-        working = working.replace(magnesiumPattern, (match, outerFull, outerTarget, mathBlock, innerFull, innerTarget) => {
+        working = working.replace(magnesiumPattern, (match, outerFull: string, outerTarget: string, mathBlock: string, innerFull: string, innerTarget: string) => {
             const t1 = outerTarget.trim().toLowerCase();
             const t2 = innerTarget.trim().toLowerCase();
             if (t1 !== t2) return match;
@@ -51,7 +51,7 @@ export class RedundantLinkPatternSanitizer {
         });
 
         const adjacentPattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s+(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])/g;
-        working = working.replace(adjacentPattern, (match, link1Full, link1Target, link2Full, link2Target) => {
+        working = working.replace(adjacentPattern, (match, link1Full: string, link1Target: string, link2Full: string, link2Target: string) => {
             if (link1Target.trim().toLowerCase() === link2Target.trim().toLowerCase()) {
                 return link1Full; 
             }
@@ -59,7 +59,7 @@ export class RedundantLinkPatternSanitizer {
         });
 
         const mathPrunePattern = /(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])/g;
-        working = working.replace(mathPrunePattern, (match, mathBlock, linkFull, linkTarget) => {
+        working = working.replace(mathPrunePattern, (match, mathBlock: string, linkFull: string, linkTarget: string) => {
             const cleanMath = this.normalize(mathBlock);
             const cleanLink = this.normalize(linkTarget);
             

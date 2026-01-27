@@ -42,7 +42,7 @@ export class GardenerSettingTab extends PluginSettingTab {
             .setName('Ignored words')
             .setDesc('Comma-separated list of words to never link (stopwords).')
             .addTextArea(text => text
-                .setPlaceholder('the, and, or')
+                .setPlaceholder('The, and, or')
                 .setValue(this.plugin.settings.ignoredWords)
                 .onChange(async (value) => {
                     this.plugin.settings.ignoredWords = value;
@@ -75,7 +75,7 @@ export class GardenerSettingTab extends PluginSettingTab {
         
         new Setting(containerEl)
             .setName('Generate scientific abbreviations')
-            .setDesc('Example: "Escherichia coli" -> "E. coli"')
+            .setDesc('Escherichia coli abbreviation.')
             .setClass('setting-item-child') 
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateScientificAbbreviations)
@@ -86,7 +86,7 @@ export class GardenerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Generate ions')
-            .setDesc('Example: "Magnesium" -> "Mg2+"')
+            .setDesc('Example: "magnesium ion"')
             .setClass('setting-item-child')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateIons)

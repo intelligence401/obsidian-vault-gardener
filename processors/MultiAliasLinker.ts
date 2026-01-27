@@ -6,6 +6,11 @@ import { VaultGardenerSettings } from '../main';
 import { REGEX_PATTERNS } from '../utils/RegexPatterns';
 import { ScientificTools } from '../utils/ScientificTools';
 
+interface SuffixGroup {
+    base: string;
+    modified: { target: string; modifier: string }[];
+}
+
 export class MultiAliasLinker {
     app: App;
     multiMap: Map<string, string[]>;
@@ -13,7 +18,7 @@ export class MultiAliasLinker {
     masker: ContextMasker;
     settings: VaultGardenerSettings;
 
-    suffixGroups: Map<string, { base: string, modified: { target: string, modifier: string }[] }>;
+    suffixGroups: Map<string, SuffixGroup>;
 
     constructor(
         app: App, 
@@ -74,8 +79,8 @@ export class MultiAliasLinker {
                     await this.app.vault.process(file, () => workingContent);
                     count++;
                 }
-            } catch (e) {
-                console.error(`MultiAliasLinker failed: ${file.path}`, e);
+            } catch {
+                // Ignore error
             }
         }
         return count;
@@ -84,7 +89,7 @@ export class MultiAliasLinker {
     private unlinkUnsupportedAliases(text: string): string {
         return text.replace(
             /\[\[([^\]|]+)(\|([^\]]+))?\]\]/g,
-            (match, targetRaw, _pipeGroup, aliasRaw) => {
+            (match: string, targetRaw: string, _pipeGroup: string, aliasRaw: string) => {
                 
                 const target = targetRaw.trim();
                 const alias = (aliasRaw || target).trim();
@@ -100,7 +105,9 @@ export class MultiAliasLinker {
 
                 const textWithoutLink = text.replace(match, '');
                 const candidates = this.multiMap.get(cleanAlias);
+                
                 if (!candidates) return match;
+
                 const targetInContext = textWithoutLink.toLowerCase().includes(target.toLowerCase());
 
                 if (!targetInContext) {
@@ -121,12 +128,12 @@ export class MultiAliasLinker {
         const tempMasks: string[] = [];
 
         if (!this.settings.enableTableLinking) {
-            textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m) => {
+            textToProcess = textToProcess.replace(REGEX_PATTERNS.MASK_TABLE_ROW, (m: string) => {
                 tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
             });
         }
         if (!this.settings.linkMathBlocks) {
-            textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m) => {
+            textToProcess = textToProcess.replace(/\$[^$]+\$/g, (m: string) => {
                 tempMasks.push(m); return `___TEMP_${tempMasks.length - 1}___`;
             });
         }
@@ -148,21 +155,23 @@ export class MultiAliasLinker {
             const key = cleanToken.toLowerCase();
 
             if (this.suffixGroups.has(key)) {
-                const group = this.suffixGroups.get(key)!;
-                let bestTarget = group.base;
+                const group = this.suffixGroups.get(key);
+                if (group) {
+                    let bestTarget = group.base;
 
-                for (const mod of group.modified) {
-                    if (lowerText.includes(mod.modifier.toLowerCase())) {
-                        bestTarget = mod.target;
-                        break; 
+                    for (const mod of group.modified) {
+                        if (lowerText.includes(mod.modifier.toLowerCase())) {
+                            bestTarget = mod.target;
+                            break; 
+                        }
                     }
-                }
 
-                const prevToken = i > 0 ? tokens[i-1] : "";
-                if (RecursionGuard.isSafeToLink(bestTarget, file, cleanToken, prevToken)) {
-                    const link = `[[${bestTarget}|${token}]]`;
-                    resultTokens[i] = link;
-                    continue;
+                    const prevToken = i > 0 ? tokens[i-1] : "";
+                    if (RecursionGuard.isSafeToLink(bestTarget, file, cleanToken, prevToken)) {
+                        const link = `[[${bestTarget}|${token}]]`;
+                        resultTokens[i] = link;
+                        continue;
+                    }
                 }
             }
 
@@ -190,7 +199,8 @@ export class MultiAliasLinker {
         }
 
         let unmaskedText = this.masker.unmask(resultTokens.join(''));
-        unmaskedText = unmaskedText.replace(/___TEMP_(\d+)___/g, (m, i) => tempMasks[parseInt(i, 10)] || m);
+        
+        unmaskedText = unmaskedText.replace(/___TEMP_(\d+)___/g, (m: string, i: string) => tempMasks[parseInt(String(i), 10)] || m);
 
         return unmaskedText;
     }

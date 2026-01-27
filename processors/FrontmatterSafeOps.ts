@@ -1,5 +1,10 @@
 import { App, TFile } from 'obsidian';
 
+interface FrontMatterCache {
+    aliases?: string[] | string | null;
+    [key: string]: unknown;
+}
+
 export class FrontmatterSafeOps {
     app: App;
 
@@ -8,11 +13,16 @@ export class FrontmatterSafeOps {
     }
 
     async updateAliases(file: TFile, callback: (existing: Set<string>) => Set<string>): Promise<boolean> {
-        return await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        return await this.app.fileManager.processFrontMatter(file, (frontmatter: FrontMatterCache) => {
             const current = new Set<string>();
+            
             if (frontmatter.aliases) {
                 if (Array.isArray(frontmatter.aliases)) {
-                    frontmatter.aliases.forEach((a: unknown) => current.add(String(a)));
+                    frontmatter.aliases.forEach((a: unknown) => {
+                        if (typeof a === 'string' || typeof a === 'number') {
+                            current.add(String(a));
+                        }
+                    });
                 } else if (typeof frontmatter.aliases === 'string') {
                     current.add(frontmatter.aliases);
                 }
@@ -33,8 +43,19 @@ export class FrontmatterSafeOps {
 
     async addAliases(app: App, file: TFile, newAliases: string[]): Promise<boolean> {
         let changed = false;
-        await app.fileManager.processFrontMatter(file, (fm) => {
-            const current = new Set<string>(fm.aliases || []);
+        await app.fileManager.processFrontMatter(file, (fm: FrontMatterCache) => {
+            const currentList: string[] = [];
+            
+            if (Array.isArray(fm.aliases)) {
+                fm.aliases.forEach((a: unknown) => {
+                    if (typeof a === 'string') currentList.push(a);
+                });
+            } else if (typeof fm.aliases === 'string') {
+                currentList.push(fm.aliases);
+            }
+
+            const current = new Set<string>(currentList);
+            
             for (const a of newAliases) {
                 if (!current.has(a)) {
                     current.add(a);

@@ -21,7 +21,6 @@ export class AliasGenerator {
         let count = 0;
         for (const file of files) {
             if (file.basename.startsWith('Untitled')) continue;
-
             if (ScientificTools.isScientificSuffixFile(file.basename)) continue;
 
             const modified = await this.fmOps.updateAliases(file, (roots) => {
@@ -33,13 +32,13 @@ export class AliasGenerator {
     }
 
     private generateFromRoots(roots: Set<string>, filePath: string): Set<string> {
-        const finalAliases = new Set<string>();
-        const generationSeeds = new Set<string>();
-
         if (this.renameHistory.has(filePath)) {
             const historyItem = this.renameHistory.get(filePath);
-            if (historyItem) finalAliases.add(historyItem);
+            if (historyItem) roots.add(historyItem);
         }
+
+        const finalAliases = new Set<string>();
+        const generationSeeds = new Set<string>();
 
         for (const root of roots) {
             finalAliases.add(root);
@@ -109,14 +108,15 @@ export class AliasGenerator {
             }
 
             if (hasScientificSuffix) {
-                const head = suffixMatch![1];
-                const suffix = suffixMatch![2];
+                const head = suffixMatch ? suffixMatch[1] : "";
+                const suffix = suffixMatch ? suffixMatch[2] : "";
                 
-                finalAliases.add(`_${suffix}_`);
-                finalAliases.add(`$${suffix}$`);
-                
-                finalAliases.add(`${head} _${suffix}_`); 
-                finalAliases.add(`${head} $${suffix}$`); 
+                if (head && suffix) {
+                    finalAliases.add(`_${suffix}_`);
+                    finalAliases.add(`$${suffix}$`);
+                    finalAliases.add(`${head} _${suffix}_`);
+                    finalAliases.add(`${head} $${suffix}$`);
+                }
             }
 
             if (this.settings.generateIons && seed.endsWith('ium') && seed.toLowerCase() !== 'bacterium') {
@@ -146,7 +146,6 @@ export class AliasGenerator {
         for (const item of finalAliases) {
             if (item.includes('$') || item.includes('_')) continue;
             if (ScientificTools.isGarbage(item)) continue;
-
             wrappers.add(`_${item}_`);
         }
         wrappers.forEach(w => finalAliases.add(w));

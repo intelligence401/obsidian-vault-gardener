@@ -7,7 +7,7 @@ export class ContextMasker {
         this.masks = [];
         let workingText = text;
 
-        const createMask = (match: string) => {
+        const createMask = (match: string): string => {
             if (aliasMap && match.startsWith('$')) {
                 const cleanKey = match.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '').toLowerCase();
                 if (aliasMap.has(cleanKey)) {
@@ -27,7 +27,7 @@ export class ContextMasker {
     }
 
     unmask(text: string): string {
-        return text.replace(/___MASK_(\d+)___/g, (match, indexStr) => {
+        return text.replace(/___MASK_(\d+)___/g, (match, indexStr: string) => {
             const index = parseInt(indexStr, 10);
             if (index >= 0 && index < this.masks.length) {
                 return this.masks[index];

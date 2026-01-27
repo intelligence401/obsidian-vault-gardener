@@ -1,9 +1,3 @@
-.vault-gardener-setting-indent {
-    border-left: 2px solid var(--background-modifier-border);
-    margin-left: 20px !important;
-    padding-left: 15px !important;
-}
-
 .vault-gardener-confirmation-modal ul {
     margin: 1em 0;
     padding-left: 2em;

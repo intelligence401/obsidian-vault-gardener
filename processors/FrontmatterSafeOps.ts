@@ -2,65 +2,47 @@ import { App, TFile } from 'obsidian';
 
 export class FrontmatterSafeOps {
     app: App;
-    
-    constructor(app: App) { this.app = app; }
 
-    async updateAliases(
-        file: TFile, 
-        generatorFn: (roots: Set<string>) => Set<string>
-    ): Promise<boolean> {
-        let isModified = false;
-
-        try {
-            await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-                let current: string[] = [];
-                if (frontmatter.aliases) {
-                    if (Array.isArray(frontmatter.aliases)) {
-                        current = frontmatter.aliases.map(String);
-                    } else if (typeof frontmatter.aliases === 'string') {
-                        current = [frontmatter.aliases];
-                    }
-                }
-
-                const roots = new Set<string>();
-                roots.add(file.basename);
-                current.forEach(a => roots.add(a.trim()));
-
-                const newSet = generatorFn(roots);
-
-                const finalAliases: string[] = [];
-                newSet.forEach(alias => {
-                    if (alias === file.basename) return;
-                    
-                    if (alias.includes('$')) {
-                        finalAliases.push(alias);
-                    }
-                    else if (this.isStrictlyValid(alias)) {
-                        finalAliases.push(alias);
-                    }
-                });
-
-                finalAliases.sort();
-                current.sort();
-                
-                if (JSON.stringify(finalAliases) !== JSON.stringify(current)) {
-                    frontmatter.aliases = finalAliases;
-                    isModified = true;
-                }
-            });
-        } catch (e) {
-            console.error(`FrontmatterOps: Failed to update ${file.path}`, e);
-        }
-
-        return isModified;
+    constructor(app: App) {
+        this.app = app;
     }
 
-    private isStrictlyValid(alias: string): boolean {
-        if (!alias) return false;
-        if (alias.includes('__')) return false;
-        const starts = alias.startsWith('_');
-        const ends = alias.endsWith('_');
-        if (starts !== ends) return false; 
-        return true;
+    async updateAliases(file: TFile, callback: (existing: Set<string>) => Set<string>): Promise<boolean> {
+        return await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+            const current = new Set<string>();
+            if (frontmatter.aliases) {
+                if (Array.isArray(frontmatter.aliases)) {
+                    frontmatter.aliases.forEach((a: unknown) => current.add(String(a)));
+                } else if (typeof frontmatter.aliases === 'string') {
+                    current.add(frontmatter.aliases);
+                }
+            }
+
+            const updated = callback(current);
+
+            const newArray = Array.from(updated).sort();
+            const oldArray = Array.from(current).sort();
+
+            if (newArray.length === oldArray.length && newArray.every((val, index) => val === oldArray[index])) {
+                return; 
+            }
+
+            frontmatter.aliases = newArray;
+        });
+    }
+
+    async addAliases(app: App, file: TFile, newAliases: string[]): Promise<boolean> {
+        let changed = false;
+        await app.fileManager.processFrontMatter(file, (fm) => {
+            const current = new Set<string>(fm.aliases || []);
+            for (const a of newAliases) {
+                if (!current.has(a)) {
+                    current.add(a);
+                    changed = true;
+                }
+            }
+            fm.aliases = Array.from(current);
+        });
+        return changed;
     }
 }

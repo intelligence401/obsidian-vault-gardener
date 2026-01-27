@@ -31,7 +31,7 @@ export class GardenerSettingTab extends PluginSettingTab {
             .setName('Ignored folders')
             .setDesc('Comma-separated list of folders to ignore.')
             .addText(text => text
-                .setPlaceholder('E.g. templates, archive, bin')
+                .setPlaceholder('Example: templates, archive, bin')
                 .setValue(this.plugin.settings.ignoredFolders)
                 .onChange(async (value) => {
                     this.plugin.settings.ignoredFolders = value;
@@ -40,9 +40,9 @@ export class GardenerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Ignored words')
-            .setDesc('Comma-separated list of words to never link (e.g. stopwords).')
+            .setDesc('Comma-separated list of words to never link (stopwords).')
             .addTextArea(text => text
-                .setPlaceholder('The, and, or')
+                .setPlaceholder('the, and, or')
                 .setValue(this.plugin.settings.ignoredWords)
                 .onChange(async (value) => {
                     this.plugin.settings.ignoredWords = value;
@@ -75,8 +75,8 @@ export class GardenerSettingTab extends PluginSettingTab {
         
         new Setting(containerEl)
             .setName('Generate scientific abbreviations')
-            .setDesc('E.g. "Escherichia coli" -> "E. coli"')
-            .setClass('vault-gardener-setting-indent') // <--- NEW CLASS
+            .setDesc('Example: "Escherichia coli" -> "E. coli"')
+            .setClass('setting-item-child') 
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateScientificAbbreviations)
                 .onChange(async (value) => {
@@ -86,8 +86,8 @@ export class GardenerSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Generate ions')
-            .setDesc('E.g. "Magnesium" -> "Mg2+"')
-            .setClass('vault-gardener-setting-indent') // <--- NEW CLASS
+            .setDesc('Example: "Magnesium" -> "Mg2+"')
+            .setClass('setting-item-child')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.generateIons)
                 .onChange(async (value) => {
@@ -108,7 +108,7 @@ export class GardenerSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('Link math blocks')
             .setDesc('If enabled, text inside $...$ may be linked.')
-            .setClass('setting-indent')
+            .setClass('setting-item-child')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.linkMathBlocks)
                 .onChange(async (value) => {
@@ -119,7 +119,7 @@ export class GardenerSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('Link table rows')
             .setDesc('If enabled, text inside tables may be linked.')
-            .setClass('setting-indent')
+            .setClass('setting-item-child')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableTableLinking)
                 .onChange(async (value) => {

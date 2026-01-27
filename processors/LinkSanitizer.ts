@@ -5,7 +5,6 @@ import { VaultIndexData } from '../utils/AsyncVaultIndex';
 export class LinkSanitizer {
     app: App;
     combinedMap: Map<string, string[]>;
-    shortFormRegistry: Map<string, Set<string>>;
 
     constructor(app: App, indexData: VaultIndexData) { 
         this.app = app; 
@@ -17,24 +16,20 @@ export class LinkSanitizer {
         for (const [key, vals] of indexData.multiMap.entries()) {
             this.combinedMap.set(key, vals);
         }
-
-        this.shortFormRegistry = indexData.shortFormRegistry;
     }
 
     async process(files: TFile[]): Promise<number> {
         let count = 0;
         for (const file of files) {
             if (file.extension !== 'md') continue;
-
             try {
-                await this.app.vault.process(file, (text) => {
-                    const clean = this.sanitizeContent(text);
-                    if (clean !== text) {
-                        count++;
-                        return clean;
-                    }
-                    return text;
-                });
+                const originalContent = await this.app.vault.read(file);
+                const clean = this.sanitizeContent(originalContent);
+                
+                if (clean !== originalContent) {
+                    await this.app.vault.process(file, () => clean);
+                    count++;
+                }
             } catch (e) {
                 console.error(`Sanitizer failed: ${file.path}`, e);
             }
@@ -52,8 +47,10 @@ export class LinkSanitizer {
         let working = text;
         working = working.replace(REGEX_PATTERNS.MASK_YAML, createMask);
         working = working.replace(REGEX_PATTERNS.MASK_CODE, createMask);
-        
-        working = working.replace(/\[\[(.*?)\\+\|\s*/g, '[[$1\\|');
+        working = working.replace(/\[\[(.*?)\s*\|\s*/g, '[[$1|');
+
+        const ulvaRegex = /_(\[\[[^\]]+\]\])_(\s*[^_\n\r]+_)/g;
+        working = working.replace(ulvaRegex, '_$1$2');
 
         working = working.replace(REGEX_PATTERNS.LINK_WITH_UNDERSCORE_ALIAS, (match, target, alias) => {
             const inner = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
@@ -66,21 +63,38 @@ export class LinkSanitizer {
             const target = targetRaw.trim();
             const alias = aliasRaw.trim();
             
-            if (alias.includes('$')) return alias; 
+            if (alias.includes('$')) return match; 
+            if (target.toLowerCase() === alias.toLowerCase()) return `[[${target}]]`;
 
-            if (target.toLowerCase() === alias.toLowerCase()) {
-                return `[[${target}]]`;
+            const aliasLower = alias.toLowerCase();
+
+            if (this.combinedMap.has(aliasLower)) {
+                 const registered = this.combinedMap.get(aliasLower);
+                 if (registered && registered.some(t => t.toLowerCase() === target.toLowerCase())) {
+                     return match; 
+                 }
             }
 
             const cleanAlias = alias.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '').toLowerCase();
             
-            if (!this.combinedMap.has(cleanAlias)) return alias; 
+            if (!this.combinedMap.has(cleanAlias)) {
+                const wrappedAlias = `_${cleanAlias}_`;
+                if (this.combinedMap.has(wrappedAlias)) {
+                     const registered = this.combinedMap.get(wrappedAlias);
+                     if (registered && registered.some(t => t.toLowerCase() === target.toLowerCase())) {
+                         return match; 
+                     }
+                }
+
+                if (alias.includes('_') && alias.includes(' ')) return match; 
+                
+                return alias; 
+            }
 
             const registeredTargets = this.combinedMap.get(cleanAlias);
             if (registeredTargets && !registeredTargets.some(t => t.toLowerCase() === target.toLowerCase())) {
                 return match; 
             }
-
             return match;
         });
 

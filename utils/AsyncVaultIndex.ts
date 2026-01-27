@@ -3,8 +3,8 @@ import { REGEX_PATTERNS } from './RegexPatterns';
 import { VaultGardenerSettings } from '../main';
 
 export interface VaultIndexData {
-    uniqueMap: Map<string, string>;
-    multiMap: Map<string, string[]>;
+    uniqueMap: Map<string, string>;       
+    multiMap: Map<string, string[]>;      
     shortFormRegistry: Map<string, Set<string>>;
 }
 
@@ -14,14 +14,7 @@ export class AsyncVaultIndex {
 
     constructor(app: App, settings: VaultGardenerSettings) {
         this.app = app;
-        
-        const defaults = [
-            "the", "and", "but", "for", "not", "this", "that", "with", "from", "into", 
-            "can", "are", "was", "were", "has", "have", "had", "will", "would", "what",
-            "who", "how", "why", "when", "where", "which", "there", "here", "does", "do"
-        ];
-        
-        this.stopWords = new Set(defaults);
+        this.stopWords = new Set(); 
 
         if (settings.ignoredWords) {
             const userWords = settings.ignoredWords.split(',').map(s => s.trim().toLowerCase());
@@ -74,27 +67,38 @@ export class AsyncVaultIndex {
     ) {
         if (!rawTerm) return;
         const term = rawTerm.trim();
-        const cleanRaw = term.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
+        
+        let cleanRaw = term;
+        const isScientificLeaf = /^[_$][a-zA-Z][0-9]?[_$]$/.test(term);
+
+        if ((term.includes(' ') && /[_$]/.test(term)) || isScientificLeaf) {
+            cleanRaw = term;
+        } else {
+            cleanRaw = term.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
+        }
+
         const cleanKey = cleanRaw.toLowerCase();
 
-        if (cleanKey.length < 2 && !cleanKey.includes('$')) return;
+        if (!isScientificLeaf && cleanKey.length < 2 && !cleanKey.includes('$')) return;
 
         if (this.stopWords.has(cleanKey)) {
-            if (cleanRaw !== cleanRaw.toUpperCase()) {
-                return;
-            }
+            if (cleanRaw !== cleanRaw.toUpperCase()) return;
         }
 
-        if (!map.has(cleanKey)) {
-            map.set(cleanKey, new Set());
+        const existingSet = map.get(cleanKey);
+        if (existingSet) {
+            existingSet.add(target);
+        } else {
+            map.set(cleanKey, new Set([target]));
         }
-        map.get(cleanKey)!.add(target);
 
         if (cleanRaw.length <= 3) {
-            if (!registry.has(cleanKey)) {
-                registry.set(cleanKey, new Set());
+            const existingShort = registry.get(cleanKey);
+            if (existingShort) {
+                existingShort.add(cleanRaw);
+            } else {
+                registry.set(cleanKey, new Set([cleanRaw]));
             }
-            registry.get(cleanKey)!.add(cleanRaw);
         }
     }
 
@@ -104,8 +108,7 @@ export class AsyncVaultIndex {
 
         return new Promise((resolve) => {
             const timerControl = { ref: null as EventRef | null };
-            
-            const timeout = setTimeout(() => {
+            const timeout = window.setTimeout(() => { 
                 if (timerControl.ref) this.app.metadataCache.offref(timerControl.ref);
                 resolve(null);
             }, 2000);

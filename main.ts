@@ -1,4 +1,4 @@
-import { Plugin, Notice } from 'obsidian';
+import { Plugin, Notice, normalizePath } from 'obsidian';
 import { AsyncVaultIndex } from './utils/AsyncVaultIndex';
 import { FilenameRenamer } from './processors/FilenameRenamer';
 import { AliasGenerator } from './processors/AliasGenerator';
@@ -8,7 +8,8 @@ import { LinkSanitizer } from './processors/LinkSanitizer';
 import { GardenerSettingTab } from './settings/GardenerSettingTab';
 import { ConfirmationModal } from './modals/ConfirmationModal';
 import { RedundantLinkPatternSanitizer } from './processors/RedundantLinkPatternSanitizer';
-import { normalizePath } from 'obsidian';
+import { AliasSanitizer } from './processors/AliasSanitizer';
+import { ScientificSuffixManager } from './processors/ScientificSuffixManager';
 
 export interface VaultGardenerSettings {
     enableRenamer: boolean;
@@ -32,7 +33,7 @@ const DEFAULT_SETTINGS: VaultGardenerSettings = {
     enableTableLinking: false,
     generateScientificAbbreviations: true,
     generateIons: true,
-    ignoredWords: 'The, and, but, for, not, this, that, with, from, into',
+    ignoredWords: '',
     ignoredFolders: 'Templates, archive, bin',
     skipConfirmationModal: false,
     linkMathBlocks: false,
@@ -84,8 +85,8 @@ export default class VaultGardener extends Plugin {
     }
 
     async runSequence() {
-        new Notice("🌱 Gardening started...");
-        this.statusBarItem.setText("🌱 Gardening: preparing...");
+        new Notice("Gardening started...");
+        this.statusBarItem.setText("Gardening: preparing...");
         
         const allFiles = this.app.vault.getMarkdownFiles();
         
@@ -102,8 +103,6 @@ export default class VaultGardener extends Plugin {
             return true;
         });
 
-        console.debug(`Processing ${files.length} files`);
-
         const indexer = new AsyncVaultIndex(this.app, this.settings);
         const renamer = new FilenameRenamer(this.app);
         const generator = new AliasGenerator(this.app, this.settings);
@@ -117,7 +116,7 @@ export default class VaultGardener extends Plugin {
                 loopCount++;
                 let changesThisLoop = 0;
                 
-                this.statusBarItem.setText(`🌱 Pass ${loopCount}/${MAX_LOOPS}...`);
+                this.statusBarItem.setText(`Pass ${loopCount}/${MAX_LOOPS}...`);
                 
                 let renameHistory = new Map<string, string>();
 
@@ -125,17 +124,31 @@ export default class VaultGardener extends Plugin {
                     renameHistory = await renamer.process(files);
                     changesThisLoop += renameHistory.size;
                 }
-                
+
+                if (loopCount === 1) {
+                    const aliasSanitizer = new AliasSanitizer(this.app);
+                    const sanitizedCount = await aliasSanitizer.process(files);
+                    changesThisLoop += sanitizedCount;
+                }
+
                 if (this.settings.enableAliases) {
                     const aliasCount = await generator.process(files, renameHistory);
                     changesThisLoop += aliasCount;
                 }
 
                 if (loopCount === 1) {
-                    const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
-                    const changes = await patternSanitizer.process(files); 
+                    const suffixManager = new ScientificSuffixManager(this.app);
+                    const changes = await suffixManager.processMaintenance(files);
                     changesThisLoop += changes;
+                    
+                    if (changes > 0) {
+                        await this.sleep(300); 
+                    }
                 }
+
+                const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
+                const changes = await patternSanitizer.process(files); 
+                changesThisLoop += changes;
 
                 let indexData = null;
                 if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
@@ -151,6 +164,12 @@ export default class VaultGardener extends Plugin {
                     }
                 }
 
+                if (this.settings.enableAutoLinker && indexData && loopCount === 1) {
+                     const suffixManager = new ScientificSuffixManager(this.app);
+                     const linkChanges = await suffixManager.linkContent(files, indexData);
+                     changesThisLoop += linkChanges;
+                }
+
                 if (this.settings.enableAutoLinker && indexData) {
                     if (loopCount === 1) {
                          const multiLinker = new MultiAliasLinker(
@@ -161,7 +180,6 @@ export default class VaultGardener extends Plugin {
                          );
                          const multiCount = await multiLinker.process(files);
                          changesThisLoop += multiCount;
-                         console.debug(`[Pass 1] MultiAliasLinker changed ${multiCount} links.`);
                     }
 
                     const autoLinker = new AutoLinker(
@@ -175,18 +193,16 @@ export default class VaultGardener extends Plugin {
                 }
 
                 totalChangesInRun += changesThisLoop;
-                console.debug(`Pass ${loopCount} complete. Changes: ${changesThisLoop}`);
 
                 if (changesThisLoop === 0) {
-                    console.debug("Vault is stable. Stopping.");
                     break;
                 }
             }
             
-            new Notice(`🌱 Gardening complete! (changes: ${totalChangesInRun})`);
+            new Notice(`Gardening complete! (Changes: ${totalChangesInRun})`);
         } catch (e) {
             console.error("Gardener failed:", e);
-            new Notice("❌ Error. Check console.");
+            new Notice("Error. Check console.");
         } finally {
             this.statusBarItem.setText("");
         }

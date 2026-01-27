@@ -12,16 +12,21 @@ export class ScientificTools {
         '\\delta': 'delta', '\\epsilon': 'epsilon', '\\phi': 'phi',
         '\\mu': 'mu', '\\lambda': 'lambda'
     };
+    public static unicodeGreekMap: Record<string, string> = {
+        'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta', 
+        'ε': 'epsilon', 'φ': 'phi', 'μ': 'mu', 'λ': 'lambda'
+    };
 
     static normalize(text: string): string {
         let clean = text;
         if (clean.includes('$')) {
             clean = clean.replace(/\$/g, '');
+            clean = clean.replace(/[_^{}]/g, ''); 
             for (const [key, val] of Object.entries(this.greekMap)) {
                 const regex = new RegExp(key.replace(/\\/g, '\\\\'), 'g');
                 clean = clean.replace(regex, val);
             }
-            clean = clean.replace(/[_^{}\\]/g, '');
+            clean = clean.replace(/\\/g, '');
         }
         let ascii = '';
         for (const char of clean) {
@@ -30,5 +35,59 @@ export class ScientificTools {
             else ascii += char;
         }
         return ascii.trim();
+    }
+
+    static unicodeToLatex(text: string): string {
+        let latex = "";
+        let hasSub = false;
+        for (const char of text) {
+            if (/[₀-₉]/.test(char)) {
+                latex += `_${this.subMap[char]}`;
+                hasSub = true;
+            } else if (/[⁺⁻]/.test(char)) {
+                latex += `^{${this.supMap[char]}}`;
+                hasSub = true;
+            } else {
+                latex += char;
+            }
+        }
+        if (hasSub) return `$${latex}$`;
+        return text;
+    }
+
+    static hasSpecialChars(text: string): boolean {
+        return /[₀-₉₊₋₌₍₎⁰-⁹⁺⁻⁽⁾]/.test(text);
+    }
+
+    static isGarbage(text: string): boolean {
+        const clean = text.replace(/^_+|_+$/g, '');
+        if (/s{3,}$/.test(clean)) return true;
+        if (/[A-Z0-9]{2,}ss$/.test(clean)) return true;
+        
+        if (/^[a-z][0-9]$/i.test(clean)) return false; 
+        if (/^[a-z][0-9]s$/i.test(clean)) return false; 
+
+        if (/\s[a-zA-Z]s{1,2}$/.test(clean)) {
+             if (/[uU]s$/.test(clean)) return false; 
+             return true; 
+        }
+        if (/^[a-zA-Z]s{1,2}$/.test(clean)) {
+             if (clean === 'us' || clean === 'is' || clean === 'as') return false; 
+             return true;
+        }
+        if (text.startsWith('_') && text.endsWith('_')) {
+            if (/^[A-Z0-9]+$/.test(clean)) return true;
+            if (clean.includes('_')) {
+                if (/_[a-zA-Z][0-9]?$/.test(clean)) return false; 
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static isScientificSuffixFile(basename: string): boolean {
+        if (basename.startsWith('Untitled')) return false;
+        const regex = /\s([a-zA-Z][0-9]?|_[a-zA-Z][0-9]?_|\$[a-zA-Z][0-9]?\$)$/;
+        return regex.test(basename);
     }
 }

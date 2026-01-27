@@ -1,4 +1,5 @@
 import { App, TFile, Notice, normalizePath } from 'obsidian';
+import { ScientificTools } from '../utils/ScientificTools';
 
 export class FilenameRenamer {
     app: App;
@@ -20,10 +21,13 @@ export class FilenameRenamer {
         for (const file of queue) {
             if (file.basename.startsWith('Untitled')) continue;
 
+            if (ScientificTools.isScientificSuffixFile(file.basename)) continue; 
+
             const hasMath = file.basename.includes('$');
             const hasWrapper = file.basename.startsWith('_') && file.basename.endsWith('_');
+            const hasInternalUnderscore = file.basename.includes('_');
 
-            if (hasMath || hasWrapper) {
+            if (hasMath || hasWrapper || hasInternalUnderscore) {
                 const result = await this.handleRename(file);
                 if (result) {
                     history.set(result.newPath, result.originalName);
@@ -56,6 +60,10 @@ export class FilenameRenamer {
             });
         }
         
+        if (newName.includes('_')) {
+            newName = newName.replace(/_/g, '');
+        }
+
         newName = newName.replace(/\s+/g, ' ').trim();
         if (newName === originalName) return null;
 
@@ -64,12 +72,9 @@ export class FilenameRenamer {
         const newPath = normalizePath(rawPath);
         
         if (await this.app.vault.adapter.exists(newPath)) {
-            console.warn(`Renamer: Skipping ${originalName}, target exists.`);
             return null;
         }
 
-        console.debug(`[RENAMER] Moving "${originalName}" -> "${newName}"`);
-        
         await this.app.fileManager.renameFile(file, newPath);
         
         return { newPath: newPath, originalName: originalName };

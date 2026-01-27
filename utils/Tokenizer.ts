@@ -6,6 +6,6 @@ export class Tokenizer {
     }
 
     static isWord(token: string): boolean {
-        return /[a-zA-Z0-9$_\-\u2018\u2019'{}\u2070-\u209F\x2F\\]/.test(token);
+        return /[a-zA-Z0-9$\-\u2018\u2019'{}\u2070-\u209F\x2F\\+]/.test(token);
     }
 }

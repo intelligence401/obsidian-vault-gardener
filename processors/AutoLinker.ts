@@ -77,13 +77,9 @@ export class AutoLinker {
         const tempMasks: string[] = [];
 
         textToProcess = textToProcess.replace(
-            /(\[\[(?:[^\]|]+)(?:\|[^\]]+)?\]\]\s*)(\([^)]+\))/g, 
+            /(\[\[(?:[^\]|]+)(?:\|[^\]]+)?\]\]\s*)(\([^)]*?\$[^)]*?\))/g, 
             (match, prefix, content) => {
-                if (content.length > 100) return match;
-                
-                if (!content.includes('$')) {
-                    return match; // Leave (PCT) alone!
-                }
+                if (!content.includes('$')) return match; 
                 
                 tempMasks.push(content);
                 return `${prefix}___TEMP_DEF_${tempMasks.length - 1}___`;
@@ -125,11 +121,11 @@ export class AutoLinker {
                 const prevToken = i > 0 ? tokens[i-1] : "";
 
                 if (RecursionGuard.isSafeToLink(match.target, file, match.linkText, prevToken)) {
-                    
                     let link = "";
                     let shouldSkip = false;
 
                     if (match.linkText.includes('$')) {
+                        
                         let lookAheadStr = "";
                         const lookAheadLimit = 15; 
                         for (let k = 1; k < lookAheadLimit; k++) {

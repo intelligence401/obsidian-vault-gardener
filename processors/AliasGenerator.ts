@@ -9,6 +9,16 @@ export class AliasGenerator {
     settings: VaultGardenerSettings;
     renameHistory: Map<string, string> = new Map();
 
+    private englishGreekMap: Record<string, string> = {
+        'α': 'alpha', 'β': 'beta', 'γ': 'gamma', 'δ': 'delta', 
+        'ε': 'epsilon', 'φ': 'phi', 'μ': 'mu', 'λ': 'lambda'
+    };
+
+    private latexGreekMap: Record<string, string> = {
+        'α': '\\alpha', 'β': '\\beta', 'γ': '\\gamma', 'δ': '\\delta', 
+        'ε': '\\epsilon', 'φ': '\\phi', 'μ': '\\mu', 'λ': '\\lambda'
+    };
+
     constructor(app: App, settings: VaultGardenerSettings) {
         this.app = app;
         this.settings = settings;
@@ -24,6 +34,14 @@ export class AliasGenerator {
             if (ScientificTools.isScientificSuffixFile(file.basename)) continue;
 
             const modified = await this.fmOps.updateAliases(file, (roots) => {
+                const cleanName = file.basename;
+                roots.add(cleanName);
+                
+                for (const r of roots) {
+                    if (ScientificTools.isGarbage(r)) {
+                        roots.delete(r);
+                    }
+                }
                 return this.generateFromRoots(roots, file.path);
             });
             if (modified) count++;
@@ -41,7 +59,35 @@ export class AliasGenerator {
         const generationSeeds = new Set<string>();
 
         for (const root of roots) {
+            if (ScientificTools.isGarbage(root)) continue;
+
             finalAliases.add(root);
+
+            let hasGreek = false;
+            for (const char of Object.keys(this.englishGreekMap)) {
+                if (root.includes(char)) {
+                    hasGreek = true;
+                    break;
+                }
+            }
+
+            if (hasGreek) {
+                let englishExpanded = root;
+                for (const [char, name] of Object.entries(this.englishGreekMap)) {
+                    englishExpanded = englishExpanded.replace(new RegExp(char, 'g'), name);
+                }
+                finalAliases.add(englishExpanded);
+                generationSeeds.add(englishExpanded);
+
+                let latexExpanded = root;
+                for (const [char, macro] of Object.entries(this.latexGreekMap)) {
+                    latexExpanded = latexExpanded.replace(new RegExp(char, 'g'), macro);
+                }
+                if (!latexExpanded.includes('$')) {
+                    latexExpanded = `$${latexExpanded}$`;
+                }
+                finalAliases.add(latexExpanded);
+            }
 
             if (root.includes('$') || ScientificTools.hasSpecialChars(root)) {
                 const ascii = ScientificTools.normalize(root);
@@ -56,19 +102,6 @@ export class AliasGenerator {
                 continue;
             }
 
-            let greekExpanded = root;
-            let hasGreek = false;
-            for (const [char, name] of Object.entries(ScientificTools.unicodeGreekMap)) {
-                if (greekExpanded.includes(char)) {
-                    greekExpanded = greekExpanded.replace(new RegExp(char, 'g'), name);
-                    hasGreek = true;
-                }
-            }
-            if (hasGreek) {
-                finalAliases.add(greekExpanded);
-                generationSeeds.add(greekExpanded);
-            }
-
             let clean = root;
             if (clean.startsWith('_') && clean.endsWith('_')) {
                 clean = clean.replace(/^_+|_+$/g, '');
@@ -76,42 +109,42 @@ export class AliasGenerator {
             if (clean.includes('_')) {
                 clean = clean.replace(/_/g, '');
             }
-            
-            if (/s{3,}$/.test(clean)) continue;
             generationSeeds.add(clean);
         }
 
         for (const seed of generationSeeds) {
+            if (ScientificTools.isGarbage(seed)) continue;
             if (!finalAliases.has(seed)) finalAliases.add(seed);
 
-            const isChemical = /\d$/.test(seed);
+            const isChemical = /[A-Za-z]+[0-9]+$/.test(seed);
             const isPhrase = seed.includes(' ');
             
-            const suffixMatch = seed.match(/^(.*)\s([a-zA-Z0-9])$/);
+            const suffixMatch = seed.match(/^(.*)\s([a-zA-Z][0-9]?)$/);
             const hasScientificSuffix = suffixMatch !== null;
 
             if (!isChemical && !hasScientificSuffix) {
                 const isCaps = /^[A-Z0-9]+$/.test(seed);
                 const endsInS = seed.endsWith('s');
-                const endsInSS = seed.endsWith('ss');
 
-                if (isCaps) {
-                    if (!endsInS) finalAliases.add(seed + 's');
-                } else {
-                    if (!endsInSS) finalAliases.add(seed + 's');
-                    
-                    const isSpecies = seed.toLowerCase().endsWith('species');
-                    if (endsInS && !endsInSS && seed.length > 3 && !isSpecies) {
-                        finalAliases.add(seed.slice(0, -1));
+                if (!isChemical && !endsInS) {
+                    if (isCaps) {
+                         finalAliases.add(seed + 's');
+                    } else {
+                        const isSpecies = seed.toLowerCase().endsWith('species');
+                        if (!isSpecies) {
+                            finalAliases.add(seed + 's');
+                        }
                     }
                 }
             }
 
-            if (hasScientificSuffix) {
-                const head = suffixMatch ? suffixMatch[1] : "";
-                const suffix = suffixMatch ? suffixMatch[2] : "";
+            if (hasScientificSuffix && suffixMatch) {
+                const head = suffixMatch[1];
+                const suffix = suffixMatch[2];
                 
-                if (head && suffix) {
+                const isUppercase = /^[A-Z]/.test(suffix);
+                
+                if (head && suffix && !isUppercase) {
                     finalAliases.add(`_${suffix}_`);
                     finalAliases.add(`$${suffix}$`);
                     finalAliases.add(`${head} _${suffix}_`);
@@ -156,9 +189,6 @@ export class AliasGenerator {
                 continue;
             }
             if (ScientificTools.isGarbage(item)) {
-                if (this.renameHistory.has(filePath) && this.renameHistory.get(filePath) === item) {
-                    continue; 
-                }
                 finalAliases.delete(item);
             }
         }

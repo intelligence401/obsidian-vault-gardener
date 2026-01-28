@@ -71,7 +71,7 @@ export class AsyncVaultIndex {
         let cleanRaw = term;
         const isScientificLeaf = /^[_$][a-zA-Z][0-9]?[_$]$/.test(term);
 
-        if ((term.includes(' ') && /[_$]/.test(term)) || isScientificLeaf) {
+        if ((term.includes(' ') && /[_$]/.test(term)) || isScientificLeaf || term.includes('\\')) {
             cleanRaw = term;
         } else {
             cleanRaw = term.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');

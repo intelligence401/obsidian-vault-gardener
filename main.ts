@@ -10,6 +10,7 @@ import { ConfirmationModal } from './modals/ConfirmationModal';
 import { RedundantLinkPatternSanitizer } from './processors/RedundantLinkPatternSanitizer';
 import { AliasSanitizer } from './processors/AliasSanitizer';
 import { ScientificSuffixManager } from './processors/ScientificSuffixManager';
+import { EdgeCaseManager } from './processors/EdgeCaseManager';
 
 export interface VaultGardenerSettings {
     enableRenamer: boolean;
@@ -45,17 +46,16 @@ export default class VaultGardener extends Plugin {
 
     async onload() {
         await this.loadSettings();
-
         this.statusBarItem = this.addStatusBarItem();
         this.statusBarItem.setText(""); 
-
-        this.addRibbonIcon('sprout', 'Garden', (_evt: MouseEvent) => {
-            if (this.settings.skipConfirmationModal) {
-                void this.runSequence();
-            } else {
-                new ConfirmationModal(this.app, this.settings, () => {
-                   void this.runSequence();
-                }).open();
+        
+        this.addRibbonIcon('sprout', 'Garden', () => {
+            if (this.settings.skipConfirmationModal) { 
+                void this.runSequence(); 
+            } else { 
+                new ConfirmationModal(this.app, this.settings, () => { 
+                    void this.runSequence(); 
+                }).open(); 
             }
         });
 
@@ -65,19 +65,20 @@ export default class VaultGardener extends Plugin {
             id: 'run-gardener', 
             name: 'Run cleanup', 
             callback: () => {
-                if (this.settings.skipConfirmationModal) {
-                    void this.runSequence();
-                } else {
-                    new ConfirmationModal(this.app, this.settings, () => {
-                        void this.runSequence();
-                    }).open();
+                if (this.settings.skipConfirmationModal) { 
+                    void this.runSequence(); 
+                } else { 
+                    new ConfirmationModal(this.app, this.settings, () => { 
+                        void this.runSequence(); 
+                    }).open(); 
                 }
             }
         });
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as VaultGardenerSettings);
+        const loadedData = (await this.loadData()) as Partial<VaultGardenerSettings> | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData);
     }
 
     async saveSettings() {
@@ -86,20 +87,13 @@ export default class VaultGardener extends Plugin {
 
     async runSequence() {
         new Notice("Gardening started...");
-        this.statusBarItem.setText("Gardening: preparing...");
+        this.statusBarItem.setText("Gardening...");
         
         const allFiles = this.app.vault.getMarkdownFiles();
-        
-        const ignoredPaths = this.settings.ignoredFolders
-            .split(',')
-            .map(s => normalizePath(s.trim()))
-            .filter(s => s.length > 0);
-
+        const ignoredPaths = this.settings.ignoredFolders.split(',').map(s => normalizePath(s.trim())).filter(s => s.length > 0);
         const files = allFiles.filter(file => {
             if (file.extension !== 'md') return false;
-            for (const ignored of ignoredPaths) {
-                if (file.path.startsWith(ignored)) return false;
-            }
+            for (const ignored of ignoredPaths) { if (file.path.startsWith(ignored)) return false; }
             return true;
         });
 
@@ -115,9 +109,7 @@ export default class VaultGardener extends Plugin {
             while (loopCount < MAX_LOOPS) {
                 loopCount++;
                 let changesThisLoop = 0;
-                
                 this.statusBarItem.setText(`Pass ${loopCount}/${MAX_LOOPS}...`);
-                
                 let renameHistory = new Map<string, string>();
 
                 if (this.settings.enableRenamer) {
@@ -127,28 +119,25 @@ export default class VaultGardener extends Plugin {
 
                 if (loopCount === 1) {
                     const aliasSanitizer = new AliasSanitizer(this.app);
-                    const sanitizedCount = await aliasSanitizer.process(files);
-                    changesThisLoop += sanitizedCount;
+                    const c = await aliasSanitizer.process(files);
+                    changesThisLoop += c;
                 }
 
                 if (this.settings.enableAliases) {
-                    const aliasCount = await generator.process(files, renameHistory);
-                    changesThisLoop += aliasCount;
+                    const c = await generator.process(files, renameHistory);
+                    changesThisLoop += c;
                 }
 
                 if (loopCount === 1) {
                     const suffixManager = new ScientificSuffixManager(this.app);
-                    const changes = await suffixManager.processMaintenance(files);
-                    changesThisLoop += changes;
-                    
-                    if (changes > 0) {
-                        await this.sleep(300); 
-                    }
+                    const c = await suffixManager.processMaintenance(files);
+                    changesThisLoop += c;
+                    if (c > 0) await this.sleep(300);
                 }
 
                 const patternSanitizer = new RedundantLinkPatternSanitizer(this.app);
-                const changes = await patternSanitizer.process(files); 
-                changesThisLoop += changes;
+                const psC = await patternSanitizer.process(files); 
+                changesThisLoop += psC;
 
                 let indexData = null;
                 if (this.settings.enableSanitizer || this.settings.enableAutoLinker) {
@@ -156,59 +145,45 @@ export default class VaultGardener extends Plugin {
                 }
 
                 if (this.settings.enableSanitizer && indexData) {
-                    const sanitizedCount = await new LinkSanitizer(this.app, indexData).process(files);
-                    changesThisLoop += sanitizedCount;
-                    
-                    if (sanitizedCount > 0) {
-                        await this.sleep(300);
-                    }
+                    const lsC = await new LinkSanitizer(this.app, indexData).process(files);
+                    changesThisLoop += lsC;
+                    if (lsC > 0) await this.sleep(300);
                 }
 
                 if (this.settings.enableAutoLinker && indexData && loopCount === 1) {
                      const suffixManager = new ScientificSuffixManager(this.app);
-                     const linkChanges = await suffixManager.linkContent(files, indexData);
-                     changesThisLoop += linkChanges;
+                     const smC = await suffixManager.linkContent(files, indexData);
+                     changesThisLoop += smC;
                 }
 
                 if (this.settings.enableAutoLinker && indexData) {
                     if (loopCount === 1) {
-                         const multiLinker = new MultiAliasLinker(
-                             this.app, 
-                             indexData.multiMap, 
-                             indexData.shortFormRegistry, 
-                             this.settings
-                         );
-                         const multiCount = await multiLinker.process(files);
-                         changesThisLoop += multiCount;
+                         const multiLinker = new MultiAliasLinker(this.app, indexData.multiMap, indexData.shortFormRegistry, this.settings);
+                         const mlC = await multiLinker.process(files);
+                         changesThisLoop += mlC;
                     }
+                    const autoLinker = new AutoLinker(this.app, indexData.uniqueMap, indexData.shortFormRegistry, this.settings);
+                    const alC = await autoLinker.process(files);
+                    changesThisLoop += alC;
+                }
 
-                    const autoLinker = new AutoLinker(
-                        this.app, 
-                        indexData.uniqueMap,
-                        indexData.shortFormRegistry, 
-                        this.settings
-                    );
-                    const linkedCount = await autoLinker.process(files);
-                    changesThisLoop += linkedCount;
+                if (indexData) {
+                    const edgeManager = new EdgeCaseManager(this.app);
+                    const ecC = await edgeManager.process(files, indexData);
+                    changesThisLoop += ecC;
                 }
 
                 totalChangesInRun += changesThisLoop;
-
-                if (changesThisLoop === 0) {
-                    break;
-                }
+                if (changesThisLoop === 0) break;
             }
-            
             new Notice(`Gardening complete! (changes: ${totalChangesInRun})`);
         } catch (e) {
-            console.error("Gardener failed:", e);
-            new Notice("Error. Check console.");
+            console.error(e);
+            new Notice("Error.");
         } finally {
             this.statusBarItem.setText("");
         }
     }
 
-    sleep(ms: number) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
+    sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 }

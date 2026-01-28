@@ -18,6 +18,17 @@ export class ScientificSuffixManager {
         
         for (const file of files) {
             if (file.extension !== 'md') continue;
+            
+            try {
+                const content = await this.app.vault.read(file);
+                const monstrosityPattern = /(\[\[[^\]]+\]\])(\|\1)+/g;
+                if (monstrosityPattern.test(content)) {
+                    const cleanContent = content.replace(monstrosityPattern, "$1");
+                    await this.app.vault.process(file, () => cleanContent);
+                    count++;
+                }
+            } catch { /* ignore */ }
+
             if (!ScientificTools.isScientificSuffixFile(file.basename)) continue;
 
             try {
@@ -40,6 +51,9 @@ export class ScientificSuffixManager {
                     const cleanExisting = new Set<string>();
                     for (const alias of existingAliases) {
                         if (alias.includes('[[') || alias.includes('|')) continue; 
+                        
+                        if (ScientificTools.isGarbage(alias)) continue;
+
                         cleanExisting.add(alias);
                     }
                     return this.generateSpecificAliases(workingName, originalBasename, cleanExisting);
@@ -56,11 +70,7 @@ export class ScientificSuffixManager {
 
     async linkContent(files: TFile[], indexData: VaultIndexData): Promise<number> {
         let count = 0;
-        const validTargets = new Set<string>();
-        for (const target of indexData.uniqueMap.values()) {
-            validTargets.add(target.toLowerCase());
-        }
-
+        
         for (const file of files) {
             if (file.extension !== 'md') continue;
             try {
@@ -69,16 +79,11 @@ export class ScientificSuffixManager {
                 const lowerContent = working.toLowerCase(); 
 
                 const cleanupPattern = /([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*\s+\$[a-zA-Z][0-9]?\$)(\s*\[\[[^\]]+\]\])+/g;
-                if (cleanupPattern.test(working)) {
-                    working = working.replace(cleanupPattern, "$1");
-                }
+                if (cleanupPattern.test(working)) working = working.replace(cleanupPattern, "$1");
 
                 const masks: string[] = [];
                 const maskText = (text: string, regex: RegExp) => {
-                    return text.replace(regex, (m) => {
-                        masks.push(m);
-                        return `___SUFFIXMASK_${masks.length - 1}___`;
-                    });
+                    return text.replace(regex, (m) => { masks.push(m); return `___SUFFIXMASK_${masks.length - 1}___`; });
                 };
 
                 working = maskText(working, REGEX_PATTERNS.MASK_YAML);
@@ -87,61 +92,62 @@ export class ScientificSuffixManager {
 
                 const adjacentPattern = /\b([a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)*)(\s+)([_$])([a-zA-Z][0-9]?)\3/g;
                 
-                working = working.replace(adjacentPattern, (match: string, head: string, space: string, wrapper: string, char: string) => {
+                working = working.replace(adjacentPattern, (
+                    match: string, 
+                    head: string, 
+                    space: string, 
+                    wrapper: string, 
+                    char: string, 
+                    offset: number, 
+                    fullString: string
+                ) => {
+                    if (fullString[offset + match.length] === '/') return match;
+                    
                     let singularHead = head;
-                    const isPlural = head.endsWith('s') && !head.endsWith('ss');
-                    if (isPlural) {
-                        singularHead = head.slice(0, -1);
-                    }
+                    if (head.endsWith('s') && !head.endsWith('ss')) singularHead = head.slice(0, -1);
                     
                     const candidateTarget = `${singularHead} ${char}`.toLowerCase();
                     const trueTarget = this.resolveTarget(candidateTarget, indexData, lowerContent);
                     
                     if (trueTarget) {
-                        if (isPlural) {
-                            return `[[${trueTarget}|${head} ${char}]]`;
-                        }
-
+                        if (head.endsWith('s') && !head.endsWith('ss')) return `[[${trueTarget}|${head} ${char}]]`;
                         if (wrapper === '$') {
                             const cleanAlias = `${head} ${char}`;
-                            if (cleanAlias.toLowerCase() === trueTarget.toLowerCase()) {
-                                return `[[${trueTarget}]]`;
-                            } else {
-                                return `[[${trueTarget}|${cleanAlias}]]`;
-                            }
+                            return (cleanAlias.toLowerCase() === trueTarget.toLowerCase()) ? `[[${trueTarget}]]` : `[[${trueTarget}|${cleanAlias}]]`;
                         } 
-                        else {
-                            return `[[${trueTarget}|${match}]]`;
-                        }
+                        return `[[${trueTarget}|${match}]]`;
                     }
                     return match;
                 });
 
                 const leafPattern = /(^|[\s(])([_$])([a-zA-Z][0-9]?)\2(?=[.,)\s]|$)/g;
                 
-                working = working.replace(leafPattern, (match: string, prefix: string, wrapper: string, char: string) => {
+                working = working.replace(leafPattern, (
+                    match: string, 
+                    prefix: string, 
+                    wrapper: string, 
+                    char: string, 
+                    offset: number, 
+                    fullString: string
+                ) => {
+                    if (fullString[offset + match.length] === '/') return match;
+                    
                     const leafKey = `${wrapper}${char}${wrapper}`;
                     const trueTarget = this.resolveTarget(leafKey.toLowerCase(), indexData, lowerContent);
-
+                    
                     if (trueTarget) {
-                        if (wrapper === '_') {
-                             return `${prefix}_[[${trueTarget}|${char}]]_`;
-                        } else {
-                             return `${prefix}[[${trueTarget}|${leafKey}]]`;
-                        }
+                        return (wrapper === '_') ? `${prefix}_[[${trueTarget}|${char}]]_` : `${prefix}[[${trueTarget}|${leafKey}]]`;
                     }
                     return match;
                 });
 
-                working = working.replace(/___SUFFIXMASK_(\d+)___/g, (m: string, i: string) => masks[parseInt(String(i), 10)] || m);
-
+                working = working.replace(/___SUFFIXMASK_(\d+)___/g, (m, i) => masks[parseInt(String(i), 10)] || m);
                 if (working !== original) {
                     await this.app.vault.process(file, () => working);
                     count++;
                 }
-
-            } catch {
-                // Ignore error
+            } catch { 
+                // Ignore
             }
         }
         return count;
@@ -150,22 +156,19 @@ export class ScientificSuffixManager {
     private resolveTarget(key: string, data: VaultIndexData, fileContent: string): string | null {
         const lowerKey = key.toLowerCase();
         
-        const exactMatch = data.uniqueMap.get(lowerKey);
-        if (exactMatch) return exactMatch;
+        // Safely access map
+        const uniqueMatch = data.uniqueMap.get(lowerKey);
+        if (uniqueMatch) return uniqueMatch;
 
         if (data.multiMap.has(lowerKey)) {
             const candidates = data.multiMap.get(lowerKey);
             if (!candidates) return null;
-
             const sorted = [...candidates].sort((a, b) => b.length - a.length);
-
             for (const candidate of sorted) {
                 const parts = candidate.split(' ');
                 if (parts.length > 2) {
                     const modifier = parts[0]; 
-                    if (fileContent.includes(modifier.toLowerCase())) {
-                        return candidate;
-                    }
+                    if (fileContent.includes(modifier.toLowerCase())) return candidate;
                 }
             }
             return sorted[sorted.length - 1];
@@ -182,10 +185,15 @@ export class ScientificSuffixManager {
         const suffix = match[2];
 
         if (originalName !== cleanName) finalAliases.add(originalName);
-        finalAliases.add(`_${suffix}_`);
-        finalAliases.add(`$${suffix}$`);
-        finalAliases.add(`${head} _${suffix}_`);
-        finalAliases.add(`${head} $${suffix}$`);
+        
+        const isUppercase = /^[A-Z]/.test(suffix);
+
+        if (!isUppercase) {
+            finalAliases.add(`_${suffix}_`);
+            finalAliases.add(`$${suffix}$`);
+            finalAliases.add(`${head} _${suffix}_`);
+            finalAliases.add(`${head} $${suffix}$`);
+        }
 
         const words = head.split(' ');
         const lastWord = words[words.length - 1];
@@ -193,12 +201,17 @@ export class ScientificSuffixManager {
             const pluralLast = lastWord + 's';
             const pluralHead = [...words.slice(0, -1), pluralLast].join(' ');
             finalAliases.add(`${pluralHead} ${suffix}`);
-            finalAliases.add(`${pluralHead} _${suffix}_`);
-            finalAliases.add(`${pluralHead} $${suffix}$`);
+            if (!isUppercase) {
+                finalAliases.add(`${pluralHead} _${suffix}_`);
+                finalAliases.add(`${pluralHead} $${suffix}$`);
+            }
         }
 
         for (const old of existing) {
             if (finalAliases.has(old)) continue;
+            
+            if (ScientificTools.isGarbage(old)) continue;
+
             if (old === suffix) continue;
             if (old.startsWith(suffix) && /^[a-zA-Z0-9]s+$/.test(old)) continue;
             if (old === `_${cleanName}_`) continue;

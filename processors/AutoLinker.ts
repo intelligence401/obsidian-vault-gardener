@@ -103,21 +103,40 @@ export class AutoLinker {
         
         const tokens = Tokenizer.tokenize(working);
         const resultTokens = [...tokens]; 
+        let currentOffset = 0;
         
         for (let i = 0; i < tokens.length; i++) {
             if (i % this.YIELD_THRESHOLD === 0) await this.yieldToMain();
 
             const token = tokens[i];
             
-            if (!Tokenizer.isWord(token)) continue;
-            if (token.startsWith('___MASK_')) continue;
-            if (token.startsWith('___TEMP_')) continue; 
+            if (!Tokenizer.isWord(token)) {
+                currentOffset += token.length;
+                continue;
+            }
+            if (token.startsWith('___MASK_') || token.startsWith('___TEMP_')) {
+                currentOffset += token.length;
+                continue; 
+            }
 
             const match = WindowMatcher.findMatch(
                 tokens, i, this.maxWindow, this.uniqueMap, this.startWords, this.shortFormRegistry
             );
 
             if (match.matched) {
+                let matchStrLen = 0;
+                for (let k = 0; k <= match.advanceIndices; k++) {
+                    if (i + k < tokens.length) {
+                        matchStrLen += tokens[i + k].length;
+                    }
+                }
+
+                const nextCharIndex = currentOffset + matchStrLen;
+                if (nextCharIndex < working.length && working[nextCharIndex] === '/') {
+                    currentOffset += token.length;
+                    continue;
+                }
+
                 const prevToken = i > 0 ? tokens[i-1] : "";
 
                 if (RecursionGuard.isSafeToLink(match.target, file, match.linkText, prevToken)) {
@@ -125,7 +144,6 @@ export class AutoLinker {
                     let shouldSkip = false;
 
                     if (match.linkText.includes('$')) {
-                        
                         let lookAheadStr = "";
                         const lookAheadLimit = 15; 
                         for (let k = 1; k < lookAheadLimit; k++) {
@@ -151,10 +169,14 @@ export class AutoLinker {
                         for (let j = 1; j <= match.advanceIndices; j++) {
                             resultTokens[i + j] = ""; 
                         }
+                        
                         i += match.advanceIndices;
+                        currentOffset += matchStrLen;
+                        continue;
                     }
                 }
             }
+            currentOffset += token.length;
         }
 
         let unmaskedText = this.masker.unmask(resultTokens.join(''));

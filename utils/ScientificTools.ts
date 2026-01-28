@@ -60,28 +60,27 @@ export class ScientificTools {
     }
 
     static isGarbage(text: string): boolean {
-        const clean = text.replace(/^_+|_+$/g, '');
-        if (/s{3,}$/.test(clean)) return true;
-        if (/[A-Z0-9]{2,}ss$/.test(clean)) return true;
-        
-        if (/^[a-z][0-9]$/i.test(clean)) return false; 
-        if (/^[a-z][0-9]s$/i.test(clean)) return false; 
+        if (!text || text.trim().length === 0) return true;
 
-        if (/\s[a-zA-Z]s{1,2}$/.test(clean)) {
-             if (/[uU]s$/.test(clean)) return false; 
-             return true; 
+        if (text.startsWith('$') && text.endsWith('_')) return true;
+        if (text.startsWith('_') && text.endsWith('$')) return true;
+        if (text.startsWith('__')) return true;
+        if (text.endsWith('__')) return true;
+        if (!text.includes('$') && /[a-zA-Z]_[0-9]/.test(text)) return true;
+
+        const core = text.replace(/[_$]/g, '').replace(/\{.*?\}/g, '');
+
+        if (/^[A-Z]s{0,2}$/.test(core)) return true;
+
+        if (/[0-9]s{1,2}$/.test(core)) return true;
+
+        if (core.endsWith('ss')) {
+            const allowList = ['class', 'glass', 'grass', 'mass', 'pass', 'less', 'moss'];
+            if (!allowList.includes(core.toLowerCase())) return true;
         }
-        if (/^[a-zA-Z]s{1,2}$/.test(clean)) {
-             if (clean === 'us' || clean === 'is' || clean === 'as') return false; 
-             return true;
-        }
-        if (text.startsWith('_') && text.endsWith('_')) {
-            if (/^[A-Z0-9]+$/.test(clean)) return true;
-            if (clean.includes('_')) {
-                if (/_[a-zA-Z][0-9]?$/.test(clean)) return false; 
-                return true;
-            }
-        }
+
+        if (/s{3,}$/.test(core)) return true; // sss
+        
         return false;
     }
 

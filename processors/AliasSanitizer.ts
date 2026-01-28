@@ -17,8 +17,6 @@ export class AliasSanitizer {
         for (const file of files) {
             if (file.extension !== 'md') continue;
 
-            if (ScientificTools.isScientificSuffixFile(file.basename)) continue;
-            
             const modified = await this.fmOps.updateAliases(file, (aliases) => {
                 const cleanSet = new Set<string>();
                 for (const alias of aliases) {

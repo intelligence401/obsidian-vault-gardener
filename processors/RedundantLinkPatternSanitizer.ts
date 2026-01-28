@@ -11,6 +11,10 @@ export class RedundantLinkPatternSanitizer {
         '⁰':'0', '¹':'1', '²':'2', '³':'3', '⁴':'4', '⁵':'5', '⁶':'6', '⁷':'7', '⁸':'8', '⁹':'9',
         '⁺':'+', '⁻':'-'
     };
+    private latexMap: Record<string, string> = {
+        '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\delta': 'δ',
+        '\\epsilon': 'ε', '\\phi': 'φ', '\\mu': 'μ', '\\lambda': 'λ'
+    };
 
     constructor(app: App) {
         this.app = app;
@@ -31,7 +35,7 @@ export class RedundantLinkPatternSanitizer {
                     count++;
                 }
             } catch {
-                // Ignore error
+                // Ignore
             }
         }
         
@@ -42,7 +46,6 @@ export class RedundantLinkPatternSanitizer {
         let working = text;
 
         const magnesiumPattern = /(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\(\s*(\$[^$]+\$)\s*(\[\[([^\]|]+)(?:\|[^\]]+)?\]\])\s*\)/g;
-        
         working = working.replace(magnesiumPattern, (match, outerFull: string, outerTarget: string, mathBlock: string, innerFull: string, innerTarget: string) => {
             const t1 = outerTarget.trim().toLowerCase();
             const t2 = innerTarget.trim().toLowerCase();
@@ -69,11 +72,30 @@ export class RedundantLinkPatternSanitizer {
             return match;
         });
 
+        const internalMathPattern = /\[\[([^|\]]+)\|((?:[^\]]*\$[^\]]*)+)\]\]/g;
+        working = working.replace(internalMathPattern, (match, target: string, alias: string) => {
+            const cleanTarget = this.normalize(target);
+            const cleanAlias = this.normalize(alias);
+
+            if (cleanTarget === cleanAlias && cleanTarget.length > 0) {
+                return `[[${target}]]`;
+            }
+            return match;
+        });
+
         return working;
     }
 
     private normalize(text: string): string {
-        const clean = text.replace(/[$[\]_{}\\]/g, '').trim().toLowerCase();
+        let clean = text;
+        
+        for (const [tex, uni] of Object.entries(this.latexMap)) {
+            const regex = new RegExp(tex.replace(/\\/g, '\\\\'), 'g');
+            clean = clean.replace(regex, uni);
+        }
+
+        clean = clean.replace(/[$[\]_{}\\]/g, '').trim().toLowerCase();
+        
         let ascii = '';
         for (const char of clean) {
             if (this.subMap[char]) ascii += this.subMap[char];

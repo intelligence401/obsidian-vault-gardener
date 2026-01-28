@@ -141,18 +141,31 @@ export class MultiAliasLinker {
         const working = this.masker.mask(textToProcess, new Map());
         const tokens = Tokenizer.tokenize(working);
         const resultTokens = [...tokens];
-
         const lowerText = textToProcess.toLowerCase();
+        let currentOffset = 0;
 
         for (let i = 0; i < tokens.length; i++) {
             const token = tokens[i];
             
-            if (!Tokenizer.isWord(token)) continue;
-            if (token.startsWith('___MASK_')) continue;
-            if (token.startsWith('___TEMP_')) continue;
+            if (!Tokenizer.isWord(token)) {
+                currentOffset += token.length;
+                continue;
+            }
+            if (token.startsWith('___MASK_') || token.startsWith('___TEMP_')) {
+                currentOffset += token.length;
+                continue;
+            }
 
             const cleanToken = token.replace(REGEX_PATTERNS.UNDERSCORES_WRAPPER, '');
             const key = cleanToken.toLowerCase();
+
+            const matchStrLen = token.length;
+
+            const nextCharIndex = currentOffset + matchStrLen;
+            if (nextCharIndex < working.length && working[nextCharIndex] === '/') {
+                currentOffset += token.length;
+                continue;
+            }
 
             if (this.suffixGroups.has(key)) {
                 const group = this.suffixGroups.get(key);
@@ -170,6 +183,7 @@ export class MultiAliasLinker {
                     if (RecursionGuard.isSafeToLink(bestTarget, file, cleanToken, prevToken)) {
                         const link = `[[${bestTarget}|${token}]]`;
                         resultTokens[i] = link;
+                        currentOffset += token.length;
                         continue;
                     }
                 }
@@ -177,7 +191,10 @@ export class MultiAliasLinker {
 
             if (this.multiMap.has(key)) {
                 const candidates = this.multiMap.get(key);
-                if (!candidates) continue;
+                if (!candidates) {
+                    currentOffset += token.length;
+                    continue;
+                }
 
                 const candidatesInContext = candidates.filter(c => 
                     lowerText.includes(c.toLowerCase())
@@ -196,11 +213,11 @@ export class MultiAliasLinker {
                     }
                 }
             }
+            currentOffset += token.length;
         }
 
         let unmaskedText = this.masker.unmask(resultTokens.join(''));
-        
-        unmaskedText = unmaskedText.replace(/___TEMP_(\d+)___/g, (m: string, i: string) => tempMasks[parseInt(String(i), 10)] || m);
+        unmaskedText = unmaskedText.replace(/___TEMP_(\d+)___/g, (m: string, i: string) => tempMasks[parseInt(i, 10)] || m);
 
         return unmaskedText;
     }
